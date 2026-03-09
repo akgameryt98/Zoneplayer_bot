@@ -1,163 +1,95 @@
 import asyncio
 import os
-from pyrofork import Client, filters
-from pyrofork.types import Message
-from pytgcalls import PyTgCalls
-from pytgcalls.types import Update
-from pytgcalls.types.input_stream import AudioPiped
 import yt_dlp
 from youtubesearchpython import VideosSearch
+from pyrogram import Client, filters
+from pyrogram.types import Message
+from pytgcalls import PyTgCalls
+from pytgcalls.types.input_stream import AudioPiped
 from config import API_ID, API_HASH, BOT_TOKEN
 
 app = Client("music_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
-call_py = PyTgCalls(app)
+pytgcalls = PyTgCalls(app)
 queues = {}
 
-def search_youtube(query):
-    search = VideosSearch(query, limit=1)
-    results = search.result()
-    if results["result"]:
-        video = results["result"][0]
-        return video["link"], video["title"], video["duration"]
-    return None, None, None
+def search_yt(query):
+    try:
+        s = VideosSearch(query, limit=1)
+        r = s.result()["result"][0]
+        return r["link"], r["title"], r["duration"]
+    except:
+        return None, None, None
 
-def download_audio(url):
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'outtmpl': 'downloads/%(id)s.%(ext)s',
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '128',
-        }],
-        'quiet': True,
+def dl_audio(url):
+    os.makedirs("dl", exist_ok=True)
+    opts = {
+        "format": "bestaudio",
+        "outtmpl": "dl/%(id)s.%(ext)s",
+        "quiet": True,
     }
-    os.makedirs('downloads', exist_ok=True)
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        filename = f"downloads/{info['id']}.mp3"
-        return filename, info['title']
+    with yt_dlp.YoutubeDL(opts) as y:
+        info = y.extract_info(url, download=True)
+        return f"dl/{info['id']}.{info['ext']}", info["title"]
 
 @app.on_message(filters.command("start"))
-async def start(client, message: Message):
-    await message.reply_text(
-        "🎵 **Music Bot Ready!**\n\n"
-        "**Commands:**\n"
-        "▶️ `/play [song name]` - Song bajao\n"
-        "⏸️ `/pause` - Pause karo\n"
-        "▶️ `/resume` - Resume karo\n"
-        "⏹️ `/stop` - Band karo\n"
-        "📋 `/queue` - Queue dekho\n\n"
-        "**Pehle Voice Chat join karo, phir /play use karo!**"
-    )
+async def start(_, m: Message):
+    await m.reply("🎵 Music Bot!\n/play [song] - bajao\n/pause - pause\n/resume - resume\n/stop - band karo")
 
 @app.on_message(filters.command("play"))
-async def play(client, message: Message):
-    chat_id = message.chat.id
-    if len(message.command) < 2:
-        await message.reply_text("❌ Song ka naam likho!\nExample: `/play Arijit Singh Tum Hi Ho`")
+async def play(_, m: Message):
+    if len(m.command) < 2:
+        await m.reply("❌ /play ke baad song naam likho")
         return
-    query = " ".join(message.command[1:])
-    searching_msg = await message.reply_text(f"🔍 **Searching:** `{query}`...")
-    url, title, duration = search_youtube(query)
+    q = " ".join(m.command[1:])
+    msg = await m.reply(f"🔍 Searching: {q}")
+    url, title, dur = search_yt(q)
     if not url:
-        await searching_msg.edit("❌ Song nahi mila! Dobara try karo.")
+        await msg.edit("❌ Song nahi mila!")
         return
-    await searching_msg.edit(f"⬇️ **Downloading:** `{title}`...")
+    await msg.edit(f"⬇️ Downloading: {title}")
     try:
-        file_path, song_title = download_audio(url)
-        if chat_id not in queues:
-            queues[chat_id] = []
-        queues[chat_id].append({
-            'file': file_path,
-            'title': song_title,
-            'duration': duration,
-            'requested_by': message.from_user.first_name
-        })
-        if len(queues[chat_id]) == 1:
-            await play_next(chat_id)
-            await searching_msg.edit(
-                f"🎵 **Playing Now:**\n"
-                f"🎶 {song_title}\n"
-                f"⏱️ Duration: {duration}\n"
-                f"👤 Requested by: {message.from_user.first_name}"
-            )
+        path, name = dl_audio(url)
+        cid = m.chat.id
+        if cid not in queues:
+            queues[cid] = []
+        queues[cid].append({"file": path, "title": name})
+        if len(queues[cid]) == 1:
+            await pytgcalls.join_group_call(cid, AudioPiped(path))
+            await msg.edit(f"▶️ Playing: {name}\n⏱ {dur}")
         else:
-            await searching_msg.edit(
-                f"📋 **Added to Queue:**\n"
-                f"🎶 {song_title}\n"
-                f"📍 Position: {len(queues[chat_id])}"
-            )
+            await msg.edit(f"📋 Queue mein add: {name} (#{len(queues[cid])})")
     except Exception as e:
-        await searching_msg.edit(f"❌ Error: {str(e)}")
-
-async def play_next(chat_id):
-    if chat_id in queues and queues[chat_id]:
-        song = queues[chat_id][0]
-        try:
-            await call_py.join_group_call(
-                chat_id,
-                AudioPiped(song['file']),
-                stream_type=None
-            )
-        except Exception as e:
-            print(f"Error playing: {e}")
+        await msg.edit(f"❌ Error: {e}")
 
 @app.on_message(filters.command("pause"))
-async def pause(client, message: Message):
+async def pause(_, m: Message):
     try:
-        await call_py.pause_stream(message.chat.id)
-        await message.reply_text("⏸️ **Paused!**")
+        await pytgcalls.pause_stream(m.chat.id)
+        await m.reply("⏸️ Paused!")
     except:
-        await message.reply_text("❌ Koi song nahi chal raha!")
+        await m.reply("❌ Kuch nahi chal raha!")
 
 @app.on_message(filters.command("resume"))
-async def resume(client, message: Message):
+async def resume(_, m: Message):
     try:
-        await call_py.resume_stream(message.chat.id)
-        await message.reply_text("▶️ **Resumed!**")
+        await pytgcalls.resume_stream(m.chat.id)
+        await m.reply("▶️ Resumed!")
     except:
-        await message.reply_text("❌ Koi song pause nahi hai!")
+        await m.reply("❌ Paused nahi hai!")
 
 @app.on_message(filters.command("stop"))
-async def stop(client, message: Message):
-    chat_id = message.chat.id
+async def stop(_, m: Message):
     try:
-        await call_py.leave_group_call(chat_id)
-        if chat_id in queues:
-            queues[chat_id] = []
-        await message.reply_text("⏹️ **Stopped!**")
+        await pytgcalls.leave_group_call(m.chat.id)
+        queues[m.chat.id] = []
+        await m.reply("⏹️ Stopped!")
     except:
-        await message.reply_text("❌ Bot Voice Chat mein nahi hai!")
-
-@app.on_message(filters.command("queue"))
-async def show_queue(client, message: Message):
-    chat_id = message.chat.id
-    if chat_id not in queues or not queues[chat_id]:
-        await message.reply_text("📋 Queue khali hai!")
-        return
-    queue_text = "📋 **Queue:**\n\n"
-    for i, song in enumerate(queues[chat_id], 1):
-        status = "▶️ Playing" if i == 1 else f"#{i}"
-        queue_text += f"{status} - {song['title']}\n"
-    await message.reply_text(queue_text)
-
-@call_py.on_stream_end()
-async def stream_ended(client, update: Update):
-    chat_id = update.chat_id
-    if chat_id in queues and queues[chat_id]:
-        queues[chat_id].pop(0)
-        if queues[chat_id]:
-            await play_next(chat_id)
-        else:
-            await call_py.leave_group_call(chat_id)
+        await m.reply("❌ Bot VC mein nahi!")
 
 async def main():
-    print("🎵 Music Bot Starting...")
     await app.start()
-    await call_py.start()
-    print("✅ Bot Ready!")
+    await pytgcalls.start()
+    print("✅ Bot chalu!")
     await asyncio.get_event_loop().run_forever()
 
-if __name__ == "__main__":
-    asyncio.run(main())
+asyncio.run(main())
