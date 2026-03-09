@@ -1,4 +1,3 @@
 telethon
 yt-dlp
-youtube-search-python
 tgcrypto
