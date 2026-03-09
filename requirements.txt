@@ -1,5 +1,5 @@
-pyrogram
-pytgcalls
+pyrogram==2.0.106
+PyTgCalls==3.0.0.dev28
+tgcalls==2.0.0
 yt-dlp
 youtube-search-python
-ffmpeg-python
