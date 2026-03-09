@@ -1,40 +1,36 @@
 import asyncio
 import os
+import requests
 import yt_dlp
 from telethon import TelegramClient, events
 from config import API_ID, API_HASH, BOT_TOKEN
 
 bot = TelegramClient('bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
-def search_and_download(query):
+def search_jiosaavn(query):
+    try:
+        url = f"https://saavn.dev/api/search/songs?query={query}&limit=1"
+        r = requests.get(url, timeout=10)
+        data = r.json()
+        song = data["data"]["results"][0]
+        title = song["name"]
+        artist = song["artists"]["primary"][0]["name"]
+        # Highest quality download URL
+        dl_url = song["downloadUrl"][-1]["url"]
+        duration = song["duration"]
+        return dl_url, f"{title} - {artist}", duration
+    except Exception as e:
+        return None, None, None
+
+def download_song(url, title):
     os.makedirs("dl", exist_ok=True)
-    ydl_opts = {
-        "format": "bestaudio/best",
-        "outtmpl": "dl/%(id)s.%(ext)s",
-        "postprocessors": [{
-            "key": "FFmpegExtractAudio",
-            "preferredcodec": "mp3",
-            "preferredquality": "128",
-        }],
-        "quiet": True,
-        "noplaylist": True,
-        "source_address": "0.0.0.0",
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android", "web"],
-            }
-        },
-        "http_headers": {
-            "User-Agent": "Mozilla/5.0 (Linux; Android 11; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.185 Mobile Safari/537.36",
-        },
-        "default_search": "ytsearch1",
-    }
-    with yt_dlp.YoutubeDL(ydl_opts) as y:
-        info = y.extract_info(query, download=True)
-        if "entries" in info:
-            info = info["entries"][0]
-        path = f"dl/{info['id']}.mp3"
-        return path, info["title"], info.get("duration", 0)
+    safe_title = "".join(c for c in title if c.isalnum() or c in " -_")[:50]
+    path = f"dl/{safe_title}.mp3"
+    r = requests.get(url, stream=True, timeout=30)
+    with open(path, "wb") as f:
+        for chunk in r.iter_content(chunk_size=8192):
+            f.write(chunk)
+    return path
 
 @bot.on(events.NewMessage(pattern='/start'))
 async def start(event):
@@ -48,10 +44,10 @@ async def start(event):
 async def help_cmd(event):
     await event.reply(
         "📋 **Commands:**\n\n"
-        "▶️ /play [song name]\n"
-        "▶️ /play [youtube link]\n\n"
+        "▶️ /play [song name]\n\n"
         "**Example:**\n"
-        "`/play Arijit Singh Tum Hi Ho`"
+        "`/play Arijit Singh Tum Hi Ho`\n"
+        "`/play mujhe peene do`"
     )
 
 @bot.on(events.NewMessage(pattern='/play'))
@@ -67,11 +63,17 @@ async def play(event):
     msg = await event.reply(f"🔍 **Searching:** `{query}`...")
 
     try:
-        await msg.edit("⬇️ **Downloading...** please wait 30 sec")
-        path, title, duration = search_and_download(query)
+        dl_url, title, duration = search_jiosaavn(query)
 
-        mins = duration // 60
-        secs = duration % 60
+        if not dl_url:
+            await msg.edit("❌ Song nahi mila! Dobara try karo.")
+            return
+
+        await msg.edit(f"⬇️ **Downloading:** `{title}`...")
+        path = download_song(dl_url, title)
+
+        mins = int(duration) // 60
+        secs = int(duration) % 60
         dur_str = f"{mins}:{secs:02d}"
 
         await msg.edit(f"📤 **Sending:** `{title}`...")
@@ -84,7 +86,6 @@ async def play(event):
                 f"⏱ Duration: {dur_str}\n"
                 f"👤 By: {event.sender.first_name}"
             ),
-            voice_note=False
         )
         await msg.delete()
 
