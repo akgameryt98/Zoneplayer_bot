@@ -17,8 +17,17 @@ def search_and_download(query):
             "preferredquality": "128",
         }],
         "quiet": True,
-        "default_search": "ytsearch1",
         "noplaylist": True,
+        "source_address": "0.0.0.0",
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "web"],
+            }
+        },
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (Linux; Android 11; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.185 Mobile Safari/537.36",
+        },
+        "default_search": "ytsearch1",
     }
     with yt_dlp.YoutubeDL(ydl_opts) as y:
         info = y.extract_info(query, download=True)
@@ -32,7 +41,6 @@ async def start(event):
     await event.reply(
         "🎵 **Music Bot Ready!**\n\n"
         "▶️ /play [song name] - Song bajao\n"
-        "🔗 /play [youtube link] - Link se bajao\n"
         "/help - Help dekho"
     )
 
@@ -40,11 +48,10 @@ async def start(event):
 async def help_cmd(event):
     await event.reply(
         "📋 **Commands:**\n\n"
-        "▶️ /play [song name] - Song search karke bajao\n"
-        "🔗 /play [youtube link] - Direct link se bajao\n\n"
+        "▶️ /play [song name]\n"
+        "▶️ /play [youtube link]\n\n"
         "**Example:**\n"
-        "`/play Arijit Singh Tum Hi Ho`\n"
-        "`/play mujhe peene do`"
+        "`/play Arijit Singh Tum Hi Ho`"
     )
 
 @bot.on(events.NewMessage(pattern='/play'))
@@ -60,7 +67,7 @@ async def play(event):
     msg = await event.reply(f"🔍 **Searching:** `{query}`...")
 
     try:
-        await msg.edit(f"⬇️ **Downloading...** please wait")
+        await msg.edit("⬇️ **Downloading...** please wait 30 sec")
         path, title, duration = search_and_download(query)
 
         mins = duration // 60
