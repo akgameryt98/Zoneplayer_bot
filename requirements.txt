@@ -1,4 +1,5 @@
-telethon
+pyrogram==2.0.106
+pytgcalls==2.1.0
 yt-dlp
-tgcrypto
 requests
+tgcrypto
