@@ -1,7 +1,7 @@
 import asyncio
 import os
-from pyrogram import Client, filters
-from pyrogram.types import Message
+from pyrofork import Client, filters
+from pyrofork.types import Message
 from pytgcalls import PyTgCalls
 from pytgcalls.types import Update
 from pytgcalls.types.input_stream import AudioPiped
@@ -89,7 +89,7 @@ async def play(client, message: Message):
                 f"📍 Position: {len(queues[chat_id])}"
             )
     except Exception as e:
-        await searching_msg.edit(f"❌ Error: {str(e)}\n\nVoice Chat mein join ho ke try karo!")
+        await searching_msg.edit(f"❌ Error: {str(e)}")
 
 async def play_next(chat_id):
     if chat_id in queues and queues[chat_id]:
@@ -126,7 +126,7 @@ async def stop(client, message: Message):
         await call_py.leave_group_call(chat_id)
         if chat_id in queues:
             queues[chat_id] = []
-        await message.reply_text("⏹️ **Stopped!** Queue bhi clear ho gaya.")
+        await message.reply_text("⏹️ **Stopped!**")
     except:
         await message.reply_text("❌ Bot Voice Chat mein nahi hai!")
 
