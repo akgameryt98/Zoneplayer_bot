@@ -1,4 +1,4 @@
-pyrogram==2.0.106
-PyTgCalls==3.0.0.dev24
+telethon
 yt-dlp
 youtube-search-python
+tgcrypto
