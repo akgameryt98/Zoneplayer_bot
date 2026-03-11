@@ -18,10 +18,9 @@ song_ratings = {}
 active_quiz = {}
 
 # ============ HELPER FUNCTIONS ============
-
 def search_jiosaavn(query):
     try:
-        url = f"https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query={query}&page=1&limit=1"
+        url = f"https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query={query}&page=1&limit=5"
         headers = {"User-Agent": "Mozilla/5.0"}
         r = requests.get(url, headers=headers, timeout=15)
         data = r.json()
@@ -408,31 +407,52 @@ async def song_info(_, m: Message):
     if len(parts) < 2 or not parts[1].strip():
         await m.reply("❌ Example: `/info Tum Hi Ho`")
         return
-    query = parts[1].strip()
+    query = parts[1].strip().lower()
     msg = await m.reply(f"🔍 **Getting info:** `{query}`...")
     try:
-        dl_url, title, duration, song_data = search_jiosaavn(query)
-        if not song_data:
+        url = f"https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query={query}&page=1&limit=10"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        r = requests.get(url, headers=headers, timeout=15)
+        data = r.json()
+        results = data["data"]["results"]
+        if not results:
             await msg.edit("❌ Song not found!")
             return
+
+        # Best match dhundho
+        best = None
+        query_words = query.lower().split()
+        for song in results:
+            song_name = song["name"].lower()
+            match_count = sum(1 for word in query_words if word in song_name)
+            if match_count >= len(query_words) * 0.6:
+                best = song
+                break
+        if not best:
+            best = results[0]
+
+        title = best["name"]
+        artist = best["primaryArtists"]
+        album = best.get("album", {}).get("name", "Unknown")
+        year = best.get("year", "Unknown")
+        duration = int(best["duration"])
         mins = duration // 60
         secs = duration % 60
-        album = song_data.get("album", {}).get("name", "Unknown")
-        year = song_data.get("year", "Unknown")
-        language = song_data.get("language", "Unknown").capitalize()
+        language = best.get("language", "Unknown").capitalize()
+
         await msg.edit(
             f"ℹ️ **Song Info:**\n\n"
-            f"🎵 **Title:** {song_data['name']}\n"
-            f"👤 **Artist:** {song_data['primaryArtists']}\n"
+            f"🎵 **Title:** {title}\n"
+            f"👤 **Artist:** {artist}\n"
             f"💿 **Album:** {album}\n"
             f"📅 **Year:** {year}\n"
             f"🌐 **Language:** {language}\n"
             f"⏱ **Duration:** {mins}:{secs:02d}\n\n"
-            f"📥 `/download {song_data['name']}` to download!"
+            f"📥 `/download {title}` to download!"
         )
     except Exception as e:
         await msg.edit(f"❌ Error: `{str(e)}`")
-
+        
 @app.on_message(filters.command("mood"))
 async def mood(_, m: Message):
     parts = m.text.split(None, 1)
@@ -810,29 +830,7 @@ async def regional(_, m: Message):
         text += f"{i}. **{song['name']}** - {song['primaryArtists']}\n"
     text += "\n📥 Use `/download [song name]` to download!"
     await msg.edit(text)
-
-@app.on_message(filters.command("decade"))
-async def decade(_, m: Message):
-    parts = m.text.split(None, 1)
-    if len(parts) < 2 or not parts[1].strip():
-        await m.reply("📅 **Choose decade:**\n\n`/decade 80s`\n`/decade 90s`\n`/decade 2000s`\n`/decade 2010s`\n`/decade 2020s`")
-        return
-    dec = parts[1].strip().lower()
-    valid = ["80s", "90s", "2000s", "2010s", "2020s"]
-    if dec not in valid:
-        await m.reply("❌ Available: `80s` `90s` `2000s` `2010s` `2020s`")
-        return
-    msg = await m.reply(f"📅 **Fetching {dec} songs...**")
-    results = search_jiosaavn_multiple(f"best hindi bollywood songs {dec}", 8)
-    if not results:
-        await msg.edit("❌ No songs found!")
-        return
-    text = f"📅 **Best Songs of {dec}:**\n\n"
-    for i, song in enumerate(results, 1):
-        text += f"{i}. **{song['name']}** - {song['primaryArtists']}\n"
-    text += "\n📥 Use `/download [song name]` to download!"
-    await msg.edit(text)
-
+    
 @app.on_message(filters.command("vibe"))
 async def vibe(_, m: Message):
     parts = m.text.split(None, 1)
