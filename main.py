@@ -121,13 +121,16 @@ def get_lyrics(query):
             title = parts[0].strip()
         else:
             title = query.strip()
-            artist = "hindi"
-        url = f"https://api.lyrics.ovh/v1/{artist}/{title}"
-        headers = {"User-Agent": "Mozilla/5.0"}
+            artist = ""
+        url = f"https://lrclib.net/api/search?track_name={title}&artist_name={artist}"
+        headers = {"User-Agent": "MusicBot/1.0"}
         r = requests.get(url, headers=headers, timeout=15)
         data = r.json()
-        lyrics = data.get("lyrics", None)
-        return lyrics, query
+        if not data:
+            return None, None
+        lyrics = data[0].get("plainLyrics", None)
+        title_full = f"{data[0].get('trackName', title)} - {data[0].get('artistName', artist)}"
+        return lyrics, title_full
     except Exception as e:
         print(f"Lyrics error: {e}")
         return None, None
