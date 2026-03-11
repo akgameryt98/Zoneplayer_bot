@@ -2,12 +2,11 @@ import asyncio
 import os
 import requests
 from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import Message
 from config import API_ID, API_HASH, BOT_TOKEN
 
 app = Client("music_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# Store user favorites and history
 favorites = {}
 history = {}
 
@@ -19,17 +18,16 @@ def search_jiosaavn(query):
         data = r.json()
         results = data["data"]["results"]
         if not results:
-            return None, None, None, None
+            return None, None, None
         song = results[0]
         title = song["name"]
         artist = song["primaryArtists"]
         dl_url = song["downloadUrl"][-1]["link"]
         duration = int(song["duration"])
-        image = song["image"][-1]["link"] if song.get("image") else None
-        return dl_url, f"{title} - {artist}", duration, image
+        return dl_url, f"{title} - {artist}", duration
     except Exception as e:
         print(f"Search error: {e}")
-        return None, None, None, None
+        return None, None, None
 
 def search_jiosaavn_multiple(query, limit=5):
     try:
@@ -55,45 +53,63 @@ def download_song(url, title):
 async def start(_, m: Message):
     await m.reply(
         "🎵 **Welcome to Music Bot!**\n\n"
-        "**Commands:**\n"
-        "▶️ `/play [song]` - Play song\n"
+        "**Available Commands:**\n\n"
+        "📥 `/download [song]` - Download song as audio file\n"
         "🔍 `/search [song]` - Search top 5 results\n"
-        "📥 `/download [song]` - Download song\n"
+        "ℹ️ `/info [song]` - Get song details\n"
         "⭐ `/save [song]` - Save to favorites\n"
-        "💾 `/favorites` - My saved songs\n"
-        "📜 `/history` - Last 10 songs\n"
-        "🎵 `/top10` - Top requested songs\n"
-        "ℹ️ `/info [song]` - Song details\n"
-        "❓ `/help` - Help"
+        "🗑 `/removefav [song]` - Remove from favorites\n"
+        "💾 `/favorites` - View saved songs\n"
+        "📜 `/history` - View last 10 played songs\n"
+        "🎵 `/top10` - Top trending songs\n"
+        "❓ `/help` - Help menu\n\n"
+        "🔜 **Coming Soon:**\n"
+        "🎙 `/play [song]` - Play in Voice Chat\n"
+        "⏸ `/pause` - Pause playback\n"
+        "▶️ `/resume` - Resume playback\n"
+        "⏹ `/stop` - Stop playback\n"
+        "📋 `/queue` - View song queue"
     )
 
 @app.on_message(filters.command("help"))
 async def help_cmd(_, m: Message):
     await m.reply(
         "❓ **Help Menu:**\n\n"
-        "▶️ `/play Tum Hi Ho` - Song bajao\n"
-        "🔍 `/search Shape of You` - 5 results dikho\n"
-        "📥 `/download Kesariya` - File download karo\n"
-        "⭐ `/save Tum Hi Ho` - Favorites mein save karo\n"
-        "💾 `/favorites` - Saved songs dekho\n"
+        "📥 `/download Tum Hi Ho` - Download song\n"
+        "🔍 `/search Arijit Singh` - Search 5 results\n"
+        "ℹ️ `/info Blinding Lights` - Song info\n"
+        "⭐ `/save Tum Hi Ho` - Add to favorites\n"
+        "🗑 `/removefav Tum Hi Ho` - Remove from favorites\n"
+        "💾 `/favorites` - View your favorites\n"
         "📜 `/history` - Recent songs\n"
-        "ℹ️ `/info Blinding Lights` - Song info dekho"
+        "🎵 `/top10` - Top trending songs\n\n"
+        "🔜 **Coming Soon:**\n"
+        "🎙 Voice Chat playback feature!"
     )
 
-@app.on_message(filters.command(["play", "download"]))
-async def play(_, m: Message):
+@app.on_message(filters.command("play"))
+async def play_coming_soon(_, m: Message):
+    await m.reply(
+        "🔜 **Coming Soon!**\n\n"
+        "Voice Chat play feature is under development.\n\n"
+        "Meanwhile use:\n"
+        "📥 `/download [song]` - Download song now!"
+    )
+
+@app.on_message(filters.command("download"))
+async def download(_, m: Message):
     parts = m.text.split(None, 1)
     if len(parts) < 2:
-        await m.reply("❌ Song ka naam likho!\nExample: `/play Tum Hi Ho`")
+        await m.reply("❌ Please write song name!\nExample: `/download Tum Hi Ho`")
         return
 
     query = parts[1].strip()
     msg = await m.reply(f"🔍 **Searching:** `{query}`...")
 
     try:
-        dl_url, title, duration, image = search_jiosaavn(query)
+        dl_url, title, duration = search_jiosaavn(query)
         if not dl_url:
-            await msg.edit("❌ Song not found! Try different name.")
+            await msg.edit("❌ Song not found! Please try a different name.")
             return
 
         await msg.edit(f"⬇️ **Downloading:** `{title}`...")
@@ -102,7 +118,6 @@ async def play(_, m: Message):
         mins = duration // 60
         secs = duration % 60
 
-        # Save to history
         user_id = m.from_user.id
         if user_id not in history:
             history[user_id] = []
@@ -117,8 +132,7 @@ async def play(_, m: Message):
             caption=(
                 f"🎵 **{title}**\n"
                 f"⏱ Duration: {mins}:{secs:02d}\n"
-                f"👤 Requested by: {m.from_user.first_name}\n\n"
-                f"💡 `/save {title}` to add to favorites"
+                f"👤 Requested by: {m.from_user.first_name}"
             ),
             title=title,
             duration=duration
@@ -157,7 +171,7 @@ async def search(_, m: Message):
         secs = duration % 60
         text += f"{i}. **{title}**\n   👤 {artist} | ⏱ {mins}:{secs:02d}\n\n"
 
-    text += "▶️ Use `/play [song name]` to play any song!"
+    text += "📥 Use `/download [song name]` to download!"
     await msg.edit(text)
 
 @app.on_message(filters.command("save"))
@@ -174,11 +188,11 @@ async def save_favorite(_, m: Message):
         favorites[user_id] = []
 
     if query in favorites[user_id]:
-        await m.reply(f"⭐ `{query}` already in favorites!")
+        await m.reply(f"⭐ `{query}` is already in your favorites!")
         return
 
     if len(favorites[user_id]) >= 20:
-        await m.reply("❌ Favorites full! Max 20 songs. Remove some with `/removefav`")
+        await m.reply("❌ Favorites full! Maximum 20 songs allowed.")
         return
 
     favorites[user_id].append(query)
@@ -195,7 +209,7 @@ async def show_favorites(_, m: Message):
     text = "⭐ **Your Favorites:**\n\n"
     for i, song in enumerate(favorites[user_id], 1):
         text += f"{i}. {song}\n"
-    text += "\n▶️ Use `/play [song name]` to play!"
+    text += "\n📥 Use `/download [song name]` to download!"
     await m.reply(text)
 
 @app.on_message(filters.command("removefav"))
@@ -209,7 +223,7 @@ async def remove_favorite(_, m: Message):
     user_id = m.from_user.id
 
     if user_id not in favorites or query not in favorites[user_id]:
-        await m.reply(f"❌ `{query}` not in favorites!")
+        await m.reply(f"❌ `{query}` is not in your favorites!")
         return
 
     favorites[user_id].remove(query)
@@ -220,7 +234,7 @@ async def show_history(_, m: Message):
     user_id = m.from_user.id
 
     if user_id not in history or not history[user_id]:
-        await m.reply("📜 No history yet!\nPlay some songs first.")
+        await m.reply("📜 No history yet!\nDownload some songs first.")
         return
 
     text = "📜 **Your Recent Songs:**\n\n"
@@ -267,7 +281,7 @@ async def song_info(_, m: Message):
             f"📅 **Year:** {year}\n"
             f"🌐 **Language:** {language}\n"
             f"⏱ **Duration:** {mins}:{secs:02d}\n\n"
-            f"▶️ `/play {title}` to play!"
+            f"📥 `/download {title}` to download!"
         )
 
     except Exception as e:
@@ -287,7 +301,7 @@ async def top10(_, m: Message):
         "8. Tere Vaaste - Varun Jain\n"
         "9. Naina - Darshan Raval\n"
         "10. Ik Vaari Aa - Arijit Singh\n\n"
-        "▶️ `/play [song name]` to play any!"
+        "📥 `/download [song name]` to download any!"
     )
 
 print("✅ Bot started!")
