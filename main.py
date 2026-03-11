@@ -2,6 +2,7 @@ import asyncio
 import os
 import requests
 import random
+import datetime
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from config import API_ID, API_HASH, BOT_TOKEN
@@ -15,36 +16,54 @@ last_downloaded = {}
 user_stats = {}
 
 MOOD_SONGS = {
-    "happy": ["Happy - Pharrell Williams", "Uptown Funk - Bruno Mars", "Can't Stop the Feeling - Justin Timberlake", "Badtameez Dil - Pritam", "Gallan Goodiyaan - Yashita Sharma"],
-    "sad": ["Tum Hi Ho - Arijit Singh", "Channa Mereya - Arijit Singh", "Agar Tum Saath Ho - Arijit Singh", "Judaai - Rekha Bhardwaj", "Phir Le Aya Dil - Arijit Singh"],
-    "party": ["Lungi Dance - Honey Singh", "Badshah - DJ Waley Babu", "Kar Gayi Chull - Badshah", "Saturday Saturday - Badshah", "Dance Ka Bhoot - Arijit Singh"],
-    "romantic": ["Tum Hi Ho - Arijit Singh", "Raataan Lambiyan - Jubin Nautiyal", "Kesariya - Arijit Singh", "Hawayein - Arijit Singh", "Tera Ban Jaunga - Akhil Sachdeva"],
-    "workout": ["Till I Collapse - Eminem", "Lose Yourself - Eminem", "Eye of the Tiger - Survivor", "Believer - Imagine Dragons", "Thunder - Imagine Dragons"],
-    "chill": ["Iktara - Amit Trivedi", "Kabira - Tochi Raina", "Khaabon Ke Parinday - Mohit Chauhan", "Tum Se Hi - Mohit Chauhan", "O Re Piya - Rahat Fateh Ali Khan"]
+    "happy": ["Happy Pharrell Williams", "Uptown Funk Bruno Mars", "Badtameez Dil", "Gallan Goodiyaan", "Balam Pichkari"],
+    "sad": ["Tum Hi Ho", "Channa Mereya", "Agar Tum Saath Ho", "Judaai", "Phir Le Aya Dil"],
+    "party": ["Lungi Dance", "DJ Waley Babu", "Kar Gayi Chull", "Saturday Saturday", "Dance Ka Bhoot"],
+    "romantic": ["Tum Hi Ho", "Raataan Lambiyan", "Kesariya", "Hawayein", "Tera Ban Jaunga"],
+    "workout": ["Till I Collapse Eminem", "Lose Yourself Eminem", "Eye of the Tiger", "Believer Imagine Dragons", "Thunder Imagine Dragons"],
+    "chill": ["Iktara", "Kabira", "Khaabon Ke Parinday", "Tum Se Hi", "O Re Piya"]
 }
 
 RANDOM_SONGS = [
     "Tum Hi Ho", "Kesariya", "Raataan Lambiyan", "Blinding Lights",
     "Shape of You", "Mujhe Peene Do", "Hawayein", "Channa Mereya",
     "Agar Tum Saath Ho", "Gallan Goodiyaan", "Badtameez Dil",
-    "Tera Ban Jaunga", "O Maahi", "Apna Bana Le", "Sajni"
+    "Tera Ban Jaunga", "O Maahi", "Apna Bana Le", "Sajni",
+    "Tere Vaaste", "Naina Darshan Raval", "Ik Vaari Aa",
+    "Kabira", "Iktara", "Phir Le Aya Dil", "Judaai"
 ]
 
 DAILY_SONGS = [
     "Tum Hi Ho", "Kesariya", "Blinding Lights", "Shape of You",
     "Raataan Lambiyan", "Hawayein", "Channa Mereya", "O Maahi",
     "Apna Bana Le", "Sajni", "Tera Ban Jaunga", "Mujhe Peene Do",
-    "Gallan Goodiyaan", "Badtameez Dil", "Ik Vaari Aa"
+    "Gallan Goodiyaan", "Badtameez Dil", "Ik Vaari Aa",
+    "Believer", "Thunder", "Senorita", "Photograph Ed Sheeran",
+    "Perfect Ed Sheeran", "Tere Vaaste", "Naina Darshan Raval",
+    "Kabira", "Iktara", "Phir Le Aya Dil", "Judaai",
+    "Dil Diya Gallan", "Bekhayali", "Bulleya", "Ae Dil Hai Mushkil"
 ]
 
 BIRTHDAY_SONGS = [
-    "Happy Birthday - Traditional",
-    "Baar Baar Din Yeh Aaye - Mohammed Rafi",
-    "Happy Birthday To You - Various",
-    "Tumhi Ho Bandhu - Cocktail",
-    "Janam Janam - Arijit Singh",
-    "Zindagi Na Milegi Dobara - Shankar Ehsaan Loy",
-    "Happy Happy - Various"
+    "Baar Baar Din Yeh Aaye",
+    "Happy Birthday To You",
+    "Tumhi Ho Bandhu Cocktail",
+    "Janam Janam Arijit Singh",
+    "Zindagi Na Milegi Dobara",
+    "Tum Jiyo Hazaron Saal",
+    "Din Shagna Da"
+]
+
+NIGHT_SONGS = [
+    "O Re Piya", "Tum Se Hi", "Iktara", "Kabira",
+    "Khaabon Ke Parinday", "Phir Le Aya Dil", "Judaai",
+    "Ae Dil Hai Mushkil", "Bekhayali", "Bulleya"
+]
+
+SHORT_SONGS = [
+    "Kesariya short", "Tum Hi Ho", "Senorita",
+    "Gallan Goodiyaan", "Naina Darshan Raval",
+    "Tere Vaaste", "Sajni"
 ]
 
 def search_jiosaavn(query):
@@ -87,11 +106,11 @@ def get_lyrics(query):
             return None, None
         song = results[0]
         song_id = song["id"]
+        title = f"{song['name']} - {song['primaryArtists']}"
         lyrics_url = f"https://jiosaavn-api-privatecvc2.vercel.app/songs/{song_id}/lyrics"
         lr = requests.get(lyrics_url, headers=headers, timeout=15)
         ldata = lr.json()
         lyrics = ldata.get("data", {}).get("lyrics", None)
-        title = f"{song['name']} - {song['primaryArtists']}"
         return lyrics, title
     except Exception as e:
         print(f"Lyrics error: {e}")
@@ -178,6 +197,12 @@ async def save_callback(_, callback):
     favorites[user_id].append(song_title)
     await callback.answer("⭐ Saved to favorites!", show_alert=False)
 
+@app.on_callback_query(filters.regex("dl_birthday"))
+async def birthday_download(_, callback):
+    await callback.answer("Downloading...", show_alert=False)
+    msg = await callback.message.reply("⬇️ **Downloading birthday song...**")
+    await send_song(callback.message, "Baar Baar Din Yeh Aaye", msg)
+
 @app.on_message(filters.command("start"))
 async def start(_, m: Message):
     await m.reply(
@@ -194,7 +219,12 @@ async def start(_, m: Message):
         "🎲 `/random` - Random song\n"
         "🎵 `/similar [song]` - Similar songs\n"
         "📅 `/daily` - Today's recommended song\n"
+        "🌍 `/trending` - Trending songs\n"
+        "🎯 `/recommend` - Recommended for you\n"
+        "⏱ `/short` - Songs under 3 mins\n"
+        "🌙 `/night` - Late night songs\n"
         "🎂 `/birthday [name]` - Birthday songs\n"
+        "🎵 `/playlist [mood]` - Download playlist\n"
         "⭐ `/save [song]` - Save to favorites\n"
         "🗑 `/removefav [song]` - Remove favorite\n"
         "💾 `/favorites` - View favorites\n"
@@ -223,7 +253,12 @@ async def help_cmd(_, m: Message):
         "🎲 `/random`\n"
         "🎵 `/similar Tum Hi Ho`\n"
         "📅 `/daily`\n"
-        "🎂 `/birthday [name]`\n"
+        "🌍 `/trending`\n"
+        "🎯 `/recommend`\n"
+        "⏱ `/short`\n"
+        "🌙 `/night`\n"
+        "🎂 `/birthday Rahul`\n"
+        "🎵 `/playlist happy`\n"
         "⭐ `/save Tum Hi Ho`\n"
         "🗑 `/removefav Tum Hi Ho`\n"
         "💾 `/favorites`\n"
@@ -258,136 +293,18 @@ async def lyrics(_, m: Message):
     if len(parts) < 2 or not parts[1].strip():
         await m.reply("❌ Please write a song name!\nExample: `/lyrics Tum Hi Ho`")
         return
-
     query = parts[1].strip()
     msg = await m.reply(f"🔍 **Searching lyrics:** `{query}`...")
-
     try:
         lyrics_text, title = get_lyrics(query)
         if not lyrics_text:
-            await msg.edit(
-                f"❌ Lyrics not found for `{query}`!\n\n"
-                "Try a different song name."
-            )
+            await msg.edit(f"❌ Lyrics not found for `{query}`!\nTry a different song name.")
             return
-
         if len(lyrics_text) > 4000:
             lyrics_text = lyrics_text[:4000] + "\n\n... *(lyrics truncated)*"
-
-        await msg.edit(
-            f"📝 **Lyrics: {title}**\n\n"
-            f"{lyrics_text}"
-        )
+        await msg.edit(f"📝 **Lyrics: {title}**\n\n{lyrics_text}")
     except Exception as e:
         await msg.edit(f"❌ Error: `{str(e)}`")
-
-@app.on_message(filters.command("similar"))
-async def similar_songs(_, m: Message):
-    parts = m.text.split(None, 1)
-    if len(parts) < 2 or not parts[1].strip():
-        await m.reply("❌ Please write a song name!\nExample: `/similar Tum Hi Ho`")
-        return
-
-    query = parts[1].strip()
-    msg = await m.reply(f"🔍 **Finding similar songs for:** `{query}`...")
-
-    try:
-        url = f"https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query={query}&page=1&limit=1"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get(url, headers=headers, timeout=15)
-        data = r.json()
-        results = data["data"]["results"]
-
-        if not results:
-            await msg.edit("❌ Song not found!")
-            return
-
-        song = results[0]
-        song_id = song["id"]
-        artist = song["primaryArtists"].split(",")[0].strip()
-
-        similar_url = f"https://jiosaavn-api-privatecvc2.vercel.app/songs/{song_id}/suggestions"
-        sr = requests.get(similar_url, headers=headers, timeout=15)
-        sdata = sr.json()
-        similar = sdata.get("data", [])
-
-        if not similar:
-            results2 = search_jiosaavn_multiple(f"{artist} songs", 6)
-            text = f"🎵 **Similar to** `{query}`:\n\n"
-            for i, s in enumerate(results2, 1):
-                text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
-        else:
-            text = f"🎵 **Similar to** `{query}`:\n\n"
-            for i, s in enumerate(similar[:8], 1):
-                text += f"{i}. **{s['name']}** - {s.get('primaryArtists', 'Unknown')}\n"
-
-        text += "\n📥 Use `/download [song name]` to download!"
-        await msg.edit(text)
-
-    except Exception as e:
-        await msg.edit(f"❌ Error: `{str(e)}`")
-
-@app.on_message(filters.command("daily"))
-async def daily_song(_, m: Message):
-    import datetime
-    day = datetime.datetime.now().day
-    song = DAILY_SONGS[day % len(DAILY_SONGS)]
-    msg = await m.reply(
-        f"📅 **Today's Recommended Song:**\n\n"
-        f"🎵 `{song}`\n\n"
-        f"⬇️ Downloading for you..."
-    )
-    await send_song(m, song, msg)
-
-@app.on_message(filters.command("birthday"))
-async def birthday(_, m: Message):
-    parts = m.text.split(None, 1)
-    name = parts[1].strip() if len(parts) > 1 and parts[1].strip() else "Someone Special"
-
-    text = (
-        f"🎂 **Happy Birthday {name}!** 🎉\n\n"
-        f"🎵 **Birthday Song Suggestions:**\n\n"
-    )
-    for i, song in enumerate(BIRTHDAY_SONGS, 1):
-        text += f"{i}. {song}\n"
-
-    text += f"\n📥 Use `/download [song name]` to download!\n\n"
-    text += f"🎊 Wishing {name} a wonderful birthday! 🎈"
-
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎵 Download Birthday Song", callback_data="dl_birthday")]
-    ])
-    await m.reply(text, reply_markup=keyboard)
-
-@app.on_callback_query(filters.regex("dl_birthday"))
-async def birthday_download(_, callback):
-    await callback.answer("Downloading birthday song...", show_alert=False)
-    msg = await callback.message.reply("⬇️ **Downloading birthday song...**")
-    await send_song(callback.message, "Baar Baar Din Yeh Aaye", msg)
-
-@app.on_message(filters.command("mystats"))
-async def my_stats(_, m: Message):
-    user_id = m.from_user.id
-    if user_id not in user_stats or user_stats[user_id]["downloads"] == 0:
-        await m.reply(
-            f"👤 **Your Stats, {m.from_user.first_name}:**\n\n"
-            "📥 Downloads: 0\n"
-            "🎵 Most Downloaded: None\n\n"
-            "Start downloading songs! 🎵"
-        )
-        return
-
-    total = user_stats[user_id]["downloads"]
-    songs = user_stats[user_id]["songs"]
-    most_common = max(set(songs), key=songs.count) if songs else "None"
-
-    await m.reply(
-        f"👤 **Your Stats, {m.from_user.first_name}:**\n\n"
-        f"📥 Total Downloads: {total}\n"
-        f"🎵 Most Downloaded: {most_common}\n"
-        f"📜 Songs in History: {len(history.get(user_id, []))}\n"
-        f"⭐ Favorites Saved: {len(favorites.get(user_id, []))}"
-    )
 
 @app.on_message(filters.command("search"))
 async def search(_, m: Message):
@@ -498,6 +415,172 @@ async def random_song(_, m: Message):
     query = random.choice(RANDOM_SONGS)
     msg = await m.reply(f"🎲 **Random Song:** `{query}`\n⬇️ Downloading...")
     await send_song(m, query, msg)
+
+@app.on_message(filters.command("similar"))
+async def similar_songs(_, m: Message):
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip():
+        await m.reply("❌ Example: `/similar Tum Hi Ho`")
+        return
+    query = parts[1].strip()
+    msg = await m.reply(f"🔍 **Finding similar songs for:** `{query}`...")
+    try:
+        url = f"https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query={query}&page=1&limit=1"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        r = requests.get(url, headers=headers, timeout=15)
+        data = r.json()
+        results = data["data"]["results"]
+        if not results:
+            await msg.edit("❌ Song not found!")
+            return
+        song = results[0]
+        song_id = song["id"]
+        artist_name = song["primaryArtists"].split(",")[0].strip()
+        similar_url = f"https://jiosaavn-api-privatecvc2.vercel.app/songs/{song_id}/suggestions"
+        sr = requests.get(similar_url, headers=headers, timeout=15)
+        sdata = sr.json()
+        similar = sdata.get("data", [])
+        if not similar:
+            results2 = search_jiosaavn_multiple(f"{artist_name} songs", 6)
+            text = f"🎵 **Similar to** `{query}`:\n\n"
+            for i, s in enumerate(results2, 1):
+                text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
+        else:
+            text = f"🎵 **Similar to** `{query}`:\n\n"
+            for i, s in enumerate(similar[:8], 1):
+                text += f"{i}. **{s['name']}** - {s.get('primaryArtists', 'Unknown')}\n"
+        text += "\n📥 Use `/download [song name]` to download!"
+        await msg.edit(text)
+    except Exception as e:
+        await msg.edit(f"❌ Error: `{str(e)}`")
+
+@app.on_message(filters.command("daily"))
+async def daily_song(_, m: Message):
+    now = datetime.datetime.now()
+    index = (now.day * now.month + now.hour) % len(DAILY_SONGS)
+    song = DAILY_SONGS[index]
+    msg = await m.reply(
+        f"📅 **Today's Recommended Song:**\n\n"
+        f"🎵 `{song}`\n\n"
+        f"⬇️ Downloading for you..."
+    )
+    await send_song(m, song, msg)
+
+@app.on_message(filters.command("trending"))
+async def trending(_, m: Message):
+    msg = await m.reply("🌍 **Fetching trending songs...**")
+    results = search_jiosaavn_multiple("trending india 2024", 10)
+    if not results:
+        await msg.edit("❌ Could not fetch trending songs!")
+        return
+    text = "🌍 **Trending Songs Right Now:**\n\n"
+    for i, song in enumerate(results, 1):
+        text += f"{i}. **{song['name']}** - {song['primaryArtists']}\n"
+    text += "\n📥 Use `/download [song name]` to download!"
+    await msg.edit(text)
+
+@app.on_message(filters.command("recommend"))
+async def recommend(_, m: Message):
+    user_id = m.from_user.id
+    msg = await m.reply("🎯 **Finding recommendations for you...**")
+
+    if user_id in history and history[user_id]:
+        last_song = history[user_id][0]
+        results = search_jiosaavn_multiple(f"similar to {last_song}", 5)
+        text = f"🎯 **Recommended Based on Your History:**\n\n"
+    else:
+        results = search_jiosaavn_multiple("best hindi songs 2024", 5)
+        text = "🎯 **Recommended Songs for You:**\n\n"
+
+    if not results:
+        await msg.edit("❌ Could not fetch recommendations!")
+        return
+
+    for i, song in enumerate(results, 1):
+        text += f"{i}. **{song['name']}** - {song['primaryArtists']}\n"
+    text += "\n📥 Use `/download [song name]` to download!"
+    await msg.edit(text)
+
+@app.on_message(filters.command("short"))
+async def short_songs(_, m: Message):
+    msg = await m.reply("⏱ **Searching short songs (under 3 mins)...**")
+    results = search_jiosaavn_multiple("short songs 3 minutes", 10)
+    if not results:
+        await msg.edit("❌ No results found!")
+        return
+    text = "⏱ **Short Songs (Under 3 Mins):**\n\n"
+    count = 0
+    for song in results:
+        duration = int(song["duration"])
+        if duration <= 180:
+            mins = duration // 60
+            secs = duration % 60
+            count += 1
+            text += f"{count}. **{song['name']}** - {song['primaryArtists']} | ⏱ {mins}:{secs:02d}\n"
+    if count == 0:
+        text = "❌ No short songs found right now!\nTry `/search [song name]` instead."
+    else:
+        text += "\n📥 Use `/download [song name]` to download!"
+    await msg.edit(text)
+
+@app.on_message(filters.command("night"))
+async def night_songs(_, m: Message):
+    song = random.choice(NIGHT_SONGS)
+    msg = await m.reply(
+        f"🌙 **Late Night Song:**\n\n"
+        f"🎵 `{song}`\n\n"
+        f"⬇️ Downloading for you..."
+    )
+    await send_song(m, song, msg)
+
+@app.on_message(filters.command("birthday"))
+async def birthday(_, m: Message):
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip() or parts[1].strip() in ["[name]", "[song]"]:
+        await m.reply("❌ Please write a name!\nExample: `/birthday Rahul`")
+        return
+    name = parts[1].strip()
+    text = (
+        f"🎂 **Happy Birthday {name}!** 🎉\n\n"
+        f"🎵 **Birthday Song Suggestions:**\n\n"
+    )
+    for i, song in enumerate(BIRTHDAY_SONGS, 1):
+        text += f"{i}. {song}\n"
+    text += f"\n📥 Use `/download [song name]` to download!\n\n"
+    text += f"🎊 Wishing **{name}** a wonderful birthday! 🎈🥳"
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎵 Download Birthday Song", callback_data="dl_birthday")]
+    ])
+    await m.reply(text, reply_markup=keyboard)
+
+@app.on_message(filters.command("playlist"))
+async def playlist(_, m: Message):
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip():
+        await m.reply(
+            "❌ Please write a mood!\n"
+            "Example: `/playlist happy`\n\n"
+            "Available: `happy` `sad` `party` `romantic` `workout` `chill`"
+        )
+        return
+    mood_type = parts[1].strip().lower()
+    if mood_type not in MOOD_SONGS:
+        await m.reply("❌ Invalid mood!\nAvailable: `happy` `sad` `party` `romantic` `workout` `chill`")
+        return
+    songs = MOOD_SONGS[mood_type]
+    emojis = {"happy": "😊", "sad": "😢", "party": "🎉", "romantic": "💕", "workout": "💪", "chill": "😌"}
+    await m.reply(
+        f"🎵 **{mood_type.capitalize()} Playlist** {emojis[mood_type]}\n\n"
+        f"Downloading {len(songs)} songs...\n"
+        f"⚠️ This may take a few minutes!"
+    )
+    for song in songs:
+        try:
+            msg = await m.reply(f"⬇️ Downloading: `{song}`...")
+            await send_song(m, song, msg)
+            await asyncio.sleep(2)
+        except:
+            pass
 
 @app.on_message(filters.command("save"))
 async def save_favorite(_, m: Message):
@@ -621,6 +704,28 @@ async def bot_stats(_, m: Message):
         f"📥 Total Downloads: {total_downloads}\n"
         f"🎵 Database: JioSaavn (Millions of songs)\n\n"
         f"🔜 Voice Chat: Coming Soon!"
+    )
+
+@app.on_message(filters.command("mystats"))
+async def my_stats(_, m: Message):
+    user_id = m.from_user.id
+    if user_id not in user_stats or user_stats[user_id]["downloads"] == 0:
+        await m.reply(
+            f"👤 **Your Stats, {m.from_user.first_name}:**\n\n"
+            "📥 Downloads: 0\n"
+            "🎵 Most Downloaded: None\n\n"
+            "Start downloading songs! 🎵"
+        )
+        return
+    total = user_stats[user_id]["downloads"]
+    songs = user_stats[user_id]["songs"]
+    most_common = max(set(songs), key=songs.count) if songs else "None"
+    await m.reply(
+        f"👤 **Your Stats, {m.from_user.first_name}:**\n\n"
+        f"📥 Total Downloads: {total}\n"
+        f"🎵 Most Downloaded: {most_common}\n"
+        f"📜 Songs in History: {len(history.get(user_id, []))}\n"
+        f"⭐ Favorites Saved: {len(favorites.get(user_id, []))}"
     )
 
 @app.on_message(filters.command("lastdownload"))
