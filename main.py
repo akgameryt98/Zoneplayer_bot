@@ -898,12 +898,32 @@ async def compare(_, m: Message):
 
 @app.on_message(filters.command("batch"))
 async def batch(_, m: Message):
-    await m.reply(
-        "📦 **Batch Download!**\n\n"
-        "Song names bhejo, ek per line:\n\n"
-        "```\nTum Hi Ho\nKesariya\nBlinding Lights```\n\n"
-        "⚠️ Max 5 songs ek baar mein!"
-    )
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip():
+        await m.reply(
+            "📦 **Batch Download!**\n\n"
+            "Seedha songs list ke saath likho:\n\n"
+            "```\n/batch Tum Hi Ho\nKesariya\nBlinding Lights```\n\n"
+            "⚠️ Max 5 songs!"
+        )
+        return
+    
+    songs = [s.strip() for s in parts[1].strip().split("\n") if s.strip()]
+    songs = songs[:5]
+    
+    if not songs:
+        await m.reply("❌ Write song name!")
+        return
+    
+    await m.reply(f"📦 **Downloading {len(songs)} songs...**\n⚠️ Thoda wait karo!")
+    
+    for i, song in enumerate(songs, 1):
+        try:
+            msg = await m.reply(f"⬇️ **{i}/{len(songs)}:** `{song}`...")
+            await send_song(m, song, msg)
+            await asyncio.sleep(2)
+        except Exception as e:
+            await m.reply(f"❌ **{song}** - Error: `{str(e)}`")
 
 @app.on_message(filters.command("findlyrics"))
 async def findlyrics(_, m: Message):
