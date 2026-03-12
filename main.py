@@ -6,6 +6,7 @@ import datetime
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from config import API_ID, API_HASH, BOT_TOKEN
+import database as db
 
 app = Client("beatnova_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
@@ -14,23 +15,9 @@ BOT_USERNAME = "@SHADE_SONG_BOT"
 DEVELOPER = "@ZeroShader"
 START_TIME = datetime.datetime.now()
 
-# ========== DATA STORAGE ==========
-favorites = {}
-history = {}
-stats = {"total_downloads": 0, "users": set(), "today_downloads": 0, "today_date": datetime.date.today()}
-last_downloaded = {}
-user_stats = {}
-song_ratings = {}
+# In-memory only (quiz state, today counter)
 active_quiz = {}
-subscribers = set()
-join_dates = {}
-user_streaks = {}
-last_active = {}
-wishlists = {}
-song_notes = {}
-song_global_stats = {}
-invite_points = {}
-collab_playlists = {}
+today_downloads = {"count": 0, "date": datetime.date.today()}
 
 PLACEHOLDERS = ["[song]", "[song name]", "[name]", "[artist]", "[line]", "[mood]", "[type]", "[a-z]"]
 
@@ -38,27 +25,16 @@ PLACEHOLDERS = ["[song]", "[song name]", "[name]", "[artist]", "[line]", "[mood]
 
 def update_today_stats():
     today = datetime.date.today()
-    if stats["today_date"] != today:
-        stats["today_downloads"] = 0
-        stats["today_date"] = today
-
-def update_streak(user_id):
-    today = datetime.date.today()
-    if user_id in last_active:
-        diff = (today - last_active[user_id]).days
-        if diff == 1:
-            user_streaks[user_id] = user_streaks.get(user_id, 0) + 1
-        elif diff > 1:
-            user_streaks[user_id] = 1
-    else:
-        user_streaks[user_id] = 1
-    last_active[user_id] = today
+    if today_downloads["date"] != today:
+        today_downloads["count"] = 0
+        today_downloads["date"] = today
 
 def get_badges(user_id):
-    downloads = user_stats.get(user_id, {}).get("downloads", 0)
-    streak = user_streaks.get(user_id, 0)
-    favs = len(favorites.get(user_id, []))
-    rated = sum(1 for r in song_ratings.values() if user_id in r)
+    user = db.get_user(user_id)
+    downloads = user["downloads"] if user else 0
+    streak = user["streak"] if user else 0
+    favs = db.count_favorites(user_id)
+    rated = db.user_rated_count(user_id)
     badges = []
     if downloads >= 1: badges.append("🎵 First Download")
     if downloads >= 10: badges.append("🎧 Music Fan")
@@ -77,6 +53,15 @@ def get_level(downloads):
     elif downloads < 50: return "🥈 Music Lover"
     elif downloads < 100: return "🥇 Music Master"
     else: return "💎 Legend"
+
+def get_user_genre_from_history(user_id):
+    songs = db.get_history(user_id, 50)
+    if not songs: return "Unknown"
+    hindi = sum(1 for s in songs if any(w in s.lower() for w in ["hindi","tum","dil","pyar","ishq","tera","mera"]))
+    english = sum(1 for s in songs if any(w in s.lower() for w in ["love","baby","night","light","heart"]))
+    punjabi = sum(1 for s in songs if any(w in s.lower() for w in ["punjabi","jatt","kudi","yaar"]))
+    counts = {"Hindi 🇮🇳": hindi, "English 🌍": english, "Punjabi 🎵": punjabi}
+    return max(counts, key=counts.get)
 
 def search_jiosaavn(query):
     try:
@@ -158,23 +143,7 @@ def download_song(url, title):
         for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
     return path
 
-def get_user_genre(user_id):
-    if user_id not in user_stats or not user_stats[user_id]["songs"]: return "Unknown"
-    songs = user_stats[user_id]["songs"]
-    counts = {
-        "Hindi 🇮🇳": sum(1 for s in songs if any(w in s.lower() for w in ["hindi","tum","dil","pyar","ishq","tera","mera"])),
-        "English 🌍": sum(1 for s in songs if any(w in s.lower() for w in ["love","baby","night","light","heart"])),
-        "Punjabi 🎵": sum(1 for s in songs if any(w in s.lower() for w in ["punjabi","jatt","kudi","yaar"]))
-    }
-    return max(counts, key=counts.get)
 
-def update_song_global_stats(title, action="download"):
-    if title not in song_global_stats:
-        song_global_stats[title] = {"downloads": 0, "favorites": 0}
-    if action == "download":
-        song_global_stats[title]["downloads"] += 1
-    elif action == "favorite":
-        song_global_stats[title]["favorites"] += 1
 
 async def send_song(m, query, msg, quality="320"):
     dl_url, title, duration, song_data = search_jiosaavn_quality(query, quality)
@@ -187,24 +156,14 @@ async def send_song(m, query, msg, quality="320"):
     user_id = m.from_user.id
 
     update_today_stats()
-    stats["total_downloads"] += 1
-    stats["today_downloads"] += 1
-    stats["users"].add(user_id)
-    update_streak(user_id)
-
-    if user_id not in history: history[user_id] = []
-    history[user_id].insert(0, title)
-    if len(history[user_id]) > 10: history[user_id] = history[user_id][:10]
-
-    if user_id not in user_stats:
-        user_stats[user_id] = {"downloads": 0, "songs": [], "name": m.from_user.first_name}
-        join_dates[user_id] = datetime.datetime.now().strftime("%d %b %Y")
-    user_stats[user_id]["name"] = m.from_user.first_name
-    user_stats[user_id]["downloads"] += 1
-    user_stats[user_id]["songs"].append(title)
-
-    last_downloaded[user_id] = {"title": title, "duration": f"{mins}:{secs:02d}", "by": m.from_user.first_name}
-    update_song_global_stats(title, "download")
+    today_downloads["count"] += 1
+    db.increment_bot_stat("total_downloads")
+    db.ensure_user(user_id, m.from_user.first_name)
+    db.update_streak(user_id)
+    db.increment_downloads(user_id)
+    db.add_history(user_id, title)
+    db.save_last_downloaded(user_id, title, f"{mins}:{secs:02d}", m.from_user.first_name)
+    db.increment_song_downloads(title)
 
     await msg.edit(f"📤 **Sending:** `{title}`...")
     album = song_data.get("album", {}).get("name", "Unknown") if song_data else "Unknown"
@@ -231,12 +190,12 @@ async def send_song(m, query, msg, quality="320"):
 async def save_callback(_, cb):
     song_title = cb.data[5:]
     user_id = cb.from_user.id
-    if user_id not in favorites: favorites[user_id] = []
-    if song_title in favorites[user_id]:
+    db.ensure_user(user_id, cb.from_user.first_name)
+    if db.is_favorite(user_id, song_title):
         await cb.answer("⭐ Already in favorites!", show_alert=False)
         return
-    favorites[user_id].append(song_title)
-    update_song_global_stats(song_title, "favorite")
+    db.add_favorite(user_id, song_title)
+    db.increment_song_favorites(song_title)
     await cb.answer("⭐ Saved to favorites!", show_alert=True)
 
 @app.on_callback_query(filters.regex(r"^sim_"))
@@ -286,14 +245,12 @@ async def birthday_dl(_, cb):
 async def rate_callback(_, cb):
     parts = cb.data.split("_")
     rating, song = int(parts[1]), "_".join(parts[2:])
-    if song not in song_ratings: song_ratings[song] = {}
-    song_ratings[song][cb.from_user.id] = rating
-    ratings = list(song_ratings[song].values())
-    avg = sum(ratings) / len(ratings)
+    db.save_rating(cb.from_user.id, song, rating)
+    avg, count = db.get_avg_rating(song)
     await cb.answer(f"✅ Rated {rating}⭐", show_alert=False)
     try:
         await cb.message.edit_reply_markup(InlineKeyboardMarkup([[
-            InlineKeyboardButton(f"⭐ {avg:.1f}/5 ({len(ratings)} votes)", callback_data="none")
+            InlineKeyboardButton(f"⭐ {avg:.1f}/5 ({count} votes)", callback_data="none")
         ]]))
     except: pass
 
@@ -305,7 +262,7 @@ async def quality_callback(_, cb):
     msg = await cb.message.reply(f"⬇️ Downloading `{song}` in **{quality}kbps**...")
     await send_song(cb.message, song, msg, quality)
 
-@app.on_callback_query(filters.regex(r"^help_"))
+@app.on_callback_query(filters.regex(r"^help_(?!back)"))
 async def help_category(_, cb):
     cat = cb.data[5:]
     texts = {
@@ -460,15 +417,14 @@ async def acoustic(_, m: Message):
 
 @app.on_message(filters.command("activestats"))
 async def activestats(_, m: Message):
-    if not user_stats:
+    users = db.get_all_users()
+    if not users:
         await m.reply("❌ No data yet!")
         return
-    sorted_users = sorted(user_stats.items(), key=lambda x: x[1]["downloads"], reverse=True)
     text = "📊 **Most Active Users:**\n\n"
     medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"]
-    for i, (uid, data) in enumerate(sorted_users[:5], 0):
-        name = data.get("name", f"User {i+1}")
-        text += f"{medals[i]} **{name}** — {data['downloads']} downloads\n"
+    for i, u in enumerate(users[:5], 0):
+        text += f"{medals[i]} **{u['name']}** — {u['downloads']} downloads\n"
     await m.reply(text)
 
 @app.on_message(filters.command("ai_playlist"))
@@ -634,8 +590,9 @@ async def artistquiz(_, m: Message):
 @app.on_message(filters.command("badges"))
 async def badges(_, m: Message):
     user_id = m.from_user.id
+    user = db.get_user(user_id) or {}
+    downloads = user.get("downloads", 0)
     badge_list = get_badges(user_id)
-    downloads = user_stats.get(user_id, {}).get("downloads", 0)
     text = f"🏅 **{m.from_user.first_name}'s Badges:**\n\n"
     for b in badge_list:
         text += f"• {b}\n"
@@ -875,11 +832,12 @@ async def english(_, m: Message):
 @app.on_message(filters.command("favorites"))
 async def show_favorites(_, m: Message):
     user_id = m.from_user.id
-    if user_id not in favorites or not favorites[user_id]:
+    favs = db.get_favorites(user_id)
+    if not favs:
         await m.reply("💾 No favorites yet!\nUse `/save [song]`")
         return
     text = "⭐ **Your Favorites:**\n\n"
-    for i, s in enumerate(favorites[user_id], 1):
+    for i, s in enumerate(favs, 1):
         text += f"{i}. {s}\n"
     text += "\n📥 `/download [song name]`"
     await m.reply(text)
@@ -974,10 +932,10 @@ async def genre(_, m: Message):
 @app.on_message(filters.command("genrestats"))
 async def genrestats(_, m: Message):
     user_id = m.from_user.id
-    if user_id not in user_stats or not user_stats[user_id]["songs"]:
+    songs = db.get_history(user_id, 50)
+    if not songs:
         await m.reply("❌ No history yet!\nDownload songs first.")
         return
-    songs = user_stats[user_id]["songs"]
     total = len(songs)
     hindi = sum(1 for s in songs if any(w in s.lower() for w in ["hindi","tum","dil","pyar","ishq","tera","mera","aaj"]))
     english = sum(1 for s in songs if any(w in s.lower() for w in ["love","baby","night","light","heart","you","my"]))
@@ -1048,11 +1006,12 @@ async def hindi(_, m: Message):
 @app.on_message(filters.command("history"))
 async def show_history(_, m: Message):
     user_id = m.from_user.id
-    if user_id not in history or not history[user_id]:
+    songs = db.get_history(user_id)
+    if not songs:
         await m.reply("📜 No history yet!")
         return
     text = "📜 **Recent Songs:**\n\n"
-    for i, s in enumerate(history[user_id], 1):
+    for i, s in enumerate(songs, 1):
         text += f"{i}. {s}\n"
     await m.reply(text)
 
@@ -1071,7 +1030,7 @@ async def song_info(_, m: Message):
         await msg.edit("❌ Song not found!")
         return
     mins, secs = duration // 60, duration % 60
-    g_stats = song_global_stats.get(song_data['name'], {})
+    g_stats = db.get_song_global_stats(song_data['name'])
     await msg.edit(
         f"ℹ️ **Song Info:**\n\n"
         f"🎵 **Title:** {song_data['name']}\n"
@@ -1087,13 +1046,12 @@ async def song_info(_, m: Message):
 @app.on_message(filters.command("invite"))
 async def invite(_, m: Message):
     user_id = m.from_user.id
-    if user_id not in invite_points:
-        invite_points[user_id] = 0
+    db.ensure_user(user_id, m.from_user.first_name)
     await m.reply(
         f"🤝 **Invite Friends to {BOT_NAME}!**\n\n"
         f"Share this bot with your friends:\n"
         f"👉 {BOT_USERNAME}\n\n"
-        f"📊 **Your Invite Points:** {invite_points[user_id]}\n\n"
+        f"📊 **Your Invite Points:** 0\n\n"
         f"🏆 Top inviters appear on `/leaderboard`!\n\n"
         f"_Share the music, spread the love!_ 🎵"
     )
@@ -1130,25 +1088,23 @@ async def karaoke(_, m: Message):
 @app.on_message(filters.command("lastdownload"))
 async def lastdownload(_, m: Message):
     user_id = m.from_user.id
-    if user_id not in last_downloaded:
+    s = db.get_last_downloaded(user_id)
+    if not s:
         await m.reply("🎵 No song downloaded yet!")
         return
-    s = last_downloaded[user_id]
-    await m.reply(f"🎵 **Last Downloaded:**\n\n🎶 **{s['title']}**\n⏱ {s['duration']} | 👤 {s['by']}\n\n📥 `/download {s['title']}`")
+    await m.reply(f"🎵 **Last Downloaded:**\n\n🎶 **{s['title']}**\n⏱ {s['duration']} | 👤 {s['by_name']}\n\n📥 `/download {s['title']}`")
 
 @app.on_message(filters.command("leaderboard"))
 async def leaderboard(_, m: Message):
-    if not user_stats:
+    users = db.get_all_users()
+    if not users:
         await m.reply("❌ No data yet!")
         return
-    sorted_users = sorted(user_stats.items(), key=lambda x: x[1]["downloads"], reverse=True)
     text = "🏆 **Top Music Lovers:**\n\n"
     medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
-    for i, (uid, data) in enumerate(sorted_users[:10], 0):
-        name = data.get("name", f"User {i+1}")
-        streak = user_streaks.get(uid, 0)
-        streak_text = f" 🔥{streak}" if streak >= 3 else ""
-        text += f"{medals[i]} **{name}** — {data['downloads']} downloads{streak_text}\n"
+    for i, u in enumerate(users[:10], 0):
+        streak_text = f" 🔥{u['streak']}" if u.get("streak", 0) >= 3 else ""
+        text += f"{medals[i]} **{u['name']}** — {u['downloads']} downloads{streak_text}\n"
     text += "\n📥 Download more to climb up! 🚀"
     await m.reply(text)
 
@@ -1275,31 +1231,32 @@ async def musicquiz(_, m: Message):
 @app.on_message(filters.command("mystats"))
 async def mystats(_, m: Message):
     user_id = m.from_user.id
-    if user_id not in user_stats or user_stats[user_id]["downloads"] == 0:
+    user = db.get_user(user_id)
+    if not user or user["downloads"] == 0:
         await m.reply(f"👤 **{m.from_user.first_name}'s Stats:**\n\n📥 Downloads: 0\n\nStart downloading! 🎵")
         return
-    total = user_stats[user_id]["downloads"]
-    songs = user_stats[user_id]["songs"]
+    songs = db.get_history(user_id, 50)
     most = max(set(songs), key=songs.count) if songs else "None"
     await m.reply(
         f"👤 **{m.from_user.first_name}'s Stats:**\n\n"
-        f"📥 Downloads: {total}\n"
+        f"📥 Downloads: {user['downloads']}\n"
         f"🎵 Most Downloaded: {most}\n"
-        f"📜 History: {len(history.get(user_id, []))}\n"
-        f"⭐ Favorites: {len(favorites.get(user_id, []))}\n"
-        f"🔥 Streak: {user_streaks.get(user_id, 0)} days\n"
-        f"🎸 Fav Genre: {get_user_genre(user_id)}\n"
-        f"🏅 Level: {get_level(total)}"
+        f"📜 History: {len(db.get_history(user_id))}\n"
+        f"⭐ Favorites: {db.count_favorites(user_id)}\n"
+        f"🔥 Streak: {user.get('streak', 0)} days\n"
+        f"🎸 Fav Genre: {get_user_genre_from_history(user_id)}\n"
+        f"🏅 Level: {get_level(user['downloads'])}"
     )
 
 @app.on_message(filters.command("mywishlist"))
 async def mywishlist(_, m: Message):
     user_id = m.from_user.id
-    if user_id not in wishlists or not wishlists[user_id]:
+    items = db.get_wishlist(user_id)
+    if not items:
         await m.reply("📋 Wishlist empty!\nUse `/wishlist [song]` to add.")
         return
     text = "📋 **Your Wishlist:**\n\n"
-    for i, s in enumerate(wishlists[user_id], 1):
+    for i, s in enumerate(items, 1):
         text += f"{i}. {s}\n"
     text += "\n📥 `/download [song name]` to download!"
     await m.reply(text)
@@ -1338,17 +1295,12 @@ async def night(_, m: Message):
 @app.on_message(filters.command("note"))
 async def note(_, m: Message):
     parts = m.text.split(None, 1)
-    if len(parts) < 2:
+    if len(parts) < 2 or "|" not in parts[1]:
         await m.reply("❌ Format: `/note Song Name | Your note`\nExample: `/note Tum Hi Ho | Best song ever!`")
-        return
-    if "|" not in parts[1]:
-        await m.reply("❌ Format: `/note Song Name | Your note`")
         return
     song, note_text = parts[1].split("|", 1)
     song, note_text = song.strip(), note_text.strip()
-    user_id = m.from_user.id
-    if user_id not in song_notes: song_notes[user_id] = {}
-    song_notes[user_id][song] = note_text
+    db.save_note(m.from_user.id, song, note_text)
     await m.reply(f"📝 **Note saved!**\n\n🎵 **{song}**\n💬 _{note_text}_")
 
 # P
@@ -1416,20 +1368,22 @@ async def preview(_, m: Message):
 @app.on_message(filters.command("profile"))
 async def profile(_, m: Message):
     user_id = m.from_user.id
-    downloads = user_stats.get(user_id, {}).get("downloads", 0)
-    songs = user_stats.get(user_id, {}).get("songs", [])
+    db.ensure_user(user_id, m.from_user.first_name)
+    user = db.get_user(user_id)
+    downloads = user["downloads"]
+    songs = db.get_history(user_id, 50)
     most = max(set(songs), key=songs.count) if songs else "None"
     badge_list = get_badges(user_id)
     await m.reply(
         f"👤 **{m.from_user.first_name}'s Profile**\n\n"
-        f"📅 Since: {join_dates.get(user_id, 'Unknown')}\n"
+        f"📅 Since: {user.get('joined', 'Unknown')}\n"
         f"📥 Downloads: {downloads}\n"
         f"🎵 Top Song: {most}\n"
-        f"🎸 Genre: {get_user_genre(user_id)}\n"
-        f"⭐ Favorites: {len(favorites.get(user_id, []))}\n"
-        f"📜 History: {len(history.get(user_id, []))}\n"
-        f"🔥 Streak: {user_streaks.get(user_id, 0)} days\n"
-        f"🔔 Subscribed: {'Yes ✅' if user_id in subscribers else 'No ❌'}\n"
+        f"🎸 Genre: {get_user_genre_from_history(user_id)}\n"
+        f"⭐ Favorites: {db.count_favorites(user_id)}\n"
+        f"📜 History: {len(db.get_history(user_id))}\n"
+        f"🔥 Streak: {user.get('streak', 0)} days\n"
+        f"🔔 Subscribed: {'Yes ✅' if db.is_subscribed(user_id) else 'No ❌'}\n"
         f"🏅 Level: {get_level(downloads)}\n\n"
         f"**Badges:** {' '.join(badge_list[:3])}"
     )
@@ -1562,12 +1516,10 @@ async def removefav(_, m: Message):
         await m.reply("❌ Example: `/removefav Tum Hi Ho`")
         return
     query = parts[1].strip()
-    user_id = m.from_user.id
-    if user_id not in favorites or query not in favorites[user_id]:
+    if db.remove_favorite(m.from_user.id, query):
+        await m.reply(f"🗑 **Removed:** `{query}`")
+    else:
         await m.reply("❌ Not in favorites!")
-        return
-    favorites[user_id].remove(query)
-    await m.reply(f"🗑 **Removed:** `{query}`")
 
 # S
 
@@ -1579,15 +1531,15 @@ async def save(_, m: Message):
         return
     query = parts[1].strip()
     user_id = m.from_user.id
-    if user_id not in favorites: favorites[user_id] = []
-    if query in favorites[user_id]:
+    db.ensure_user(user_id, m.from_user.first_name)
+    if db.is_favorite(user_id, query):
         await m.reply("⭐ Already in favorites!")
         return
-    if len(favorites[user_id]) >= 20:
+    if db.count_favorites(user_id) >= 20:
         await m.reply("❌ Favorites full! Max 20.")
         return
-    favorites[user_id].append(query)
-    update_song_global_stats(query, "favorite")
+    db.add_favorite(user_id, query)
+    db.increment_song_favorites(query)
     await m.reply(f"⭐ **Saved:** `{query}`")
 
 @app.on_message(filters.command("search"))
@@ -1622,9 +1574,8 @@ async def share(_, m: Message):
         await msg.edit("❌ Song not found!")
         return
     mins, secs = duration // 60, duration % 60
-    g_stats = song_global_stats.get(song_data['name'], {})
-    ratings = song_ratings.get(song_data['name'][:25], {})
-    avg_rating = sum(ratings.values())/len(ratings) if ratings else 0
+    g_stats = db.get_song_global_stats(song_data['name'])
+    avg_rating, _ = db.get_avg_rating(song_data['name'][:25])
     share_text = (
         f"🎵 **{song_data['name']}**\n"
         f"👤 Artist: {song_data['primaryArtists']}\n"
@@ -1725,10 +1676,8 @@ async def songstats(_, m: Message):
         await msg.edit("❌ Song not found!")
         return
     song_name = song_data['name']
-    g_stats = song_global_stats.get(song_name, {"downloads": 0, "favorites": 0})
-    ratings = song_ratings.get(song_name[:25], {})
-    avg_rating = sum(ratings.values())/len(ratings) if ratings else 0
-    vote_count = len(ratings)
+    g_stats = db.get_song_global_stats(song_name)
+    avg_rating, vote_count = db.get_avg_rating(song_name[:25])
     await msg.edit(
         f"📊 **{song_name}**\n\n"
         f"👤 {song_data['primaryArtists']}\n"
@@ -1742,8 +1691,7 @@ async def songstats(_, m: Message):
 @app.on_message(filters.command("start"))
 async def start(_, m: Message):
     user_id = m.from_user.id
-    if user_id not in join_dates:
-        join_dates[user_id] = datetime.datetime.now().strftime("%d %b %Y")
+    db.ensure_user(user_id, m.from_user.first_name)
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🎵 Download & Search", callback_data="help_download"),
          InlineKeyboardButton("🌍 Discover", callback_data="help_discover")],
@@ -1778,11 +1726,11 @@ async def bot_stats(_, m: Message):
     mins = int((uptime.total_seconds() % 3600) // 60)
     await m.reply(
         f"📊 **{BOT_NAME} Statistics:**\n\n"
-        f"👥 Total Users: {len(stats['users'])}\n"
-        f"📥 Total Downloads: {stats['total_downloads']}\n"
-        f"📅 Today's Downloads: {stats['today_downloads']}\n"
-        f"⭐ Rated Songs: {len(song_ratings)}\n"
-        f"🔔 Subscribers: {len(subscribers)}\n"
+        f"👥 Total Users: {db.get_total_users()}\n"
+        f"📥 Total Downloads: {db.get_total_downloads()}\n"
+        f"📅 Today's Downloads: {today_downloads['count']}\n"
+        f"⭐ Rated Songs: {db.get_total_users()}\n"
+        f"🔔 Subscribers: {len(db.get_subscribers())}\n"
         f"⏰ Uptime: {hours}h {mins}m\n"
         f"🎵 Database: JioSaavn\n\n"
         f"🔜 Voice Chat: Coming Soon!\n"
@@ -1792,7 +1740,8 @@ async def bot_stats(_, m: Message):
 @app.on_message(filters.command("streak"))
 async def streak(_, m: Message):
     user_id = m.from_user.id
-    current_streak = user_streaks.get(user_id, 0)
+    u = db.get_user(user_id)
+    current_streak = u['streak'] if u else 0
     if current_streak == 0:
         await m.reply(f"🔥 **Streak: 0 days**\n\nDownload a song today to start your streak!")
         return
@@ -1810,10 +1759,11 @@ async def streak(_, m: Message):
 @app.on_message(filters.command("subscribe"))
 async def subscribe(_, m: Message):
     user_id = m.from_user.id
-    if user_id in subscribers:
+    if db.is_subscribed(user_id):
         await m.reply("🔔 Already subscribed!\nUse `/unsubscribe` to stop.")
         return
-    subscribers.add(user_id)
+    db.ensure_user(user_id, m.from_user.first_name)
+    db.set_subscribed(user_id, True)
     await m.reply("🔔 **Subscribed!**\n\nYou'll receive a daily song every morning at 9 AM!\nUse `/unsubscribe` to stop anytime.")
 
 # T
@@ -1881,14 +1831,13 @@ async def topindia(_, m: Message):
 
 @app.on_message(filters.command("topsongs"))
 async def topsongs(_, m: Message):
-    if not song_ratings:
+    top = db.get_top_rated_songs()
+    if not top:
         await m.reply("❌ No rated songs yet!\nUse `/rate [song]`")
         return
-    sorted_s = sorted(song_ratings.items(), key=lambda x: sum(x[1].values())/len(x[1]), reverse=True)
     text = "🏆 **Top Rated Songs:**\n\n"
-    for i, (song, ratings) in enumerate(sorted_s[:10], 1):
-        avg = sum(ratings.values()) / len(ratings)
-        text += f"{i}. **{song}** — ⭐ {avg:.1f}/5 ({len(ratings)} votes)\n"
+    for i, row in enumerate(top, 1):
+        text += f"{i}. **{row['song']}** — ⭐ {row['avg_r']:.1f}/5 ({row['cnt']} votes)\n"
     await m.reply(text)
 
 @app.on_message(filters.command("top2025"))
@@ -1970,10 +1919,10 @@ async def trending(_, m: Message):
 @app.on_message(filters.command("unsubscribe"))
 async def unsubscribe(_, m: Message):
     user_id = m.from_user.id
-    if user_id not in subscribers:
+    if not db.is_subscribed(user_id):
         await m.reply("❌ Not subscribed!\nUse `/subscribe` to start.")
         return
-    subscribers.discard(user_id)
+    db.set_subscribed(user_id, False)
     await m.reply("🔕 **Unsubscribed!**\nYou won't receive daily songs anymore.")
 
 @app.on_message(filters.command("uptime"))
@@ -2040,14 +1989,10 @@ async def wishlist(_, m: Message):
         return
     query = parts[1].strip()
     user_id = m.from_user.id
-    if user_id not in wishlists: wishlists[user_id] = []
-    if query in wishlists[user_id]:
+    db.ensure_user(user_id, m.from_user.first_name)
+    if not db.add_wishlist(user_id, query):
         await m.reply("📋 Already in wishlist!")
         return
-    if len(wishlists[user_id]) >= 20:
-        await m.reply("❌ Wishlist full! Max 20.")
-        return
-    wishlists[user_id].append(query)
     await m.reply(f"📋 **Added to Wishlist:** `{query}`\n\nView: `/mywishlist`\nDownload: `/download {query}`")
 
 # Y
@@ -2151,11 +2096,12 @@ async def send_daily_songs():
     while True:
         now = datetime.datetime.now()
         if now.hour == 9 and now.minute == 0:
-            if subscribers:
+            subs = db.get_subscribers()
+            if subs:
                 results = search_jiosaavn_multiple("popular hindi songs 2024", 20)
                 if results:
                     song = random.choice(results)
-                    for user_id in subscribers:
+                    for user_id in subs:
                         try:
                             msg_obj = await app.send_message(user_id,
                                 f"🔔 **Good Morning! Daily Song from {BOT_NAME}:**\n\n"
@@ -2166,6 +2112,7 @@ async def send_daily_songs():
 
 async def main():
     await app.start()
+    db.init_db()
     print(f"✅ {BOT_NAME} started!")
     asyncio.create_task(send_daily_songs())
     await asyncio.Event().wait()
