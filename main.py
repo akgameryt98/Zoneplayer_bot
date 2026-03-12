@@ -380,9 +380,17 @@ async def lyrics(_, m: Message):
     if not lyrics_text:
         await msg.edit("❌ Lyrics not found!\nTry: `/lyrics Song Name - Artist Name`")
         return
-    if len(lyrics_text) > 4000:
-        lyrics_text = lyrics_text[:4000] + "\n\n...*(truncated)*"
-    await msg.edit(f"📝 **Lyrics: {title}**\n\n{lyrics_text}")
+    header = f"📝 **Lyrics: {title}**\n\n"
+    full_text = header + lyrics_text
+    if len(full_text) <= 4096:
+        await msg.edit(full_text)
+    else:
+        await msg.edit(header + lyrics_text[:4000])
+        remaining = lyrics_text[4000:]
+        while remaining:
+            chunk = remaining[:4096]
+            remaining = remaining[4096:]
+            await m.reply(chunk)
 
 @app.on_message(filters.command("mood"))
 async def mood(_, m: Message):
@@ -817,7 +825,7 @@ async def skip(_, m: Message):
     quiz = active_quiz.pop(chat_id)
     await m.reply(f"⏭ **Skipped!**\nAnswer: **{quiz['title']}** by {quiz['artist']}")
 
-@app.on_message(filters.text & ~filters.command(""))
+@app.on_message(filters.text & ~filters.regex(r"^/"))
 async def quiz_check(_, m: Message):
     chat_id = m.chat.id
     if chat_id not in active_quiz:
