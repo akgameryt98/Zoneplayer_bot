@@ -162,8 +162,9 @@ async def send_song(m, query, msg, quality="320"):
     if len(history[user_id]) > 10:
         history[user_id] = history[user_id][:10]
     if user_id not in user_stats:
-        user_stats[user_id] = {"downloads": 0, "songs": []}
+        user_stats[user_id] = {"downloads": 0, "songs": [], "name": m.from_user.first_name}
         join_dates[user_id] = datetime.datetime.now().strftime("%d %b %Y")
+    user_stats[user_id]["name"] = m.from_user.first_name
     user_stats[user_id]["downloads"] += 1
     user_stats[user_id]["songs"].append(title)
     last_downloaded[user_id] = {"title": title, "duration": f"{mins}:{secs:02d}", "by": m.from_user.first_name}
@@ -278,79 +279,318 @@ async def quality_callback(_, cb):
 async def none_cb(_, cb):
     await cb.answer()
 
-# ========== COMMANDS ==========
+# ========== COMMANDS (A to Z) ==========
 
-@app.on_message(filters.command("start"))
-async def start(_, m: Message):
-    user_id = m.from_user.id
-    if user_id not in join_dates:
-        join_dates[user_id] = datetime.datetime.now().strftime("%d %b %Y")
-    await m.reply(
-        f"🎵 **Welcome to Music Bot!**\n"
-        f"Hello {m.from_user.first_name}! 👋\n\n"
-        "**Commands:**\n\n"
-        "📥 `/download [song]` - Download song\n"
-        "🎧 `/quality [song]` - Choose quality\n"
-        "🎵 `/preview [song]` - 30sec preview\n"
-        "🔍 `/search [song]` - Search top 5\n"
-        "ℹ️ `/info [song]` - Song details\n"
-        "📝 `/lyrics [song-artist]` - Lyrics\n"
-        "🎭 `/mood [type]` - Mood songs\n"
-        "🎸 `/genre [type]` - Genre songs\n"
-        "🌐 `/hindi` `/punjabi` `/english`\n"
-        "🎤 `/artist [name]` - Artist songs\n"
-        "🏆 `/topartist [name]` - Top songs\n"
-        "💿 `/album [name]` - Album songs\n"
-        "🔤 `/letter [A-Z]` - By letter\n"
-        "🎲 `/random` - Random song\n"
-        "🎵 `/similar [song]` - Similar songs\n"
-        "🎼 `/karaoke [song]` - Instrumental\n"
-        "🎤 `/similarartist [name]` - Similar artists\n"
-        "🔗 `/chain [song]` - Song chain\n"
-        "📅 `/daily` - Today's song\n"
-        "🌍 `/trending` - Trending now\n"
-        "🎯 `/recommend` - For you\n"
-        "⏱ `/short` - Under 3 mins\n"
-        "🌙 `/night` - Late night\n"
-        "🎂 `/birthday [name]` - Birthday\n"
-        "🎵 `/playlist [mood]` - Playlist\n"
-        "🌍 `/regional [lang]` - Regional\n"
-        "🎭 `/vibe [song]` - Vibe analysis\n"
-        "🤖 `/ai_playlist [activity]`\n"
-        "💬 `/quote` - Music quote\n"
-        "🎯 `/guesssong` - Guess song!\n"
-        "🎮 `/musicquiz` - Music quiz\n"
-        "⭐ `/rate [song]` - Rate song\n"
-        "🏆 `/topsongs` - Top rated\n"
-        "⚖️ `/compare [s1] | [s2]`\n"
-        "📦 `/batch` - Multiple download\n"
-        "🔤 `/findlyrics [line]`\n"
-        "📊 `/topindia` `/topbollywood` `/top2025`\n"
-        "👤 `/profile` - My profile\n"
-        "🏆 `/leaderboard` - Top users\n"
-        "🔔 `/subscribe` - Daily song\n"
-        "🔕 `/unsubscribe` - Stop daily\n"
-        "⭐ `/save [song]` - Save\n"
-        "🗑 `/removefav [song]` - Remove\n"
-        "💾 `/favorites` - Favorites\n"
-        "📜 `/history` - History\n"
-        "📊 `/stats` - Bot stats\n"
-        "👤 `/mystats` - My stats\n"
-        "🎵 `/lastdownload` - Last song\n"
-        "❓ `/help` - Help\n\n"
-        "🔜 **Coming Soon:** 🎙 `/play` Voice Chat"
+# A
+
+@app.on_message(filters.command("ai_playlist"))
+async def ai_playlist(_, m: Message):
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
+        await m.reply("🤖 **Choose activity:**\n`/ai_playlist gym` 💪\n`/ai_playlist study` 📚\n`/ai_playlist heartbreak` 💔\n`/ai_playlist sleep` 😴\n`/ai_playlist party` 🎉\n`/ai_playlist romantic` 💕\n`/ai_playlist morning` 🌅\n`/ai_playlist roadtrip` 🚗")
+        return
+    activity = parts[1].strip().lower()
+    queries = {
+        "gym": "workout gym motivation", "study": "study focus calm instrumental",
+        "heartbreak": "heartbreak sad emotional hindi", "sleep": "sleep relaxing calm",
+        "party": "party dance upbeat hindi", "romantic": "romantic love songs",
+        "morning": "morning fresh motivational", "roadtrip": "roadtrip travel songs"
+    }
+    emojis = {"gym": "💪", "study": "📚", "heartbreak": "💔", "sleep": "😴", "party": "🎉", "romantic": "💕", "morning": "🌅", "roadtrip": "🚗"}
+    if activity not in queries:
+        await m.reply("❌ Available: `gym` `study` `heartbreak` `sleep` `party` `romantic` `morning` `roadtrip`")
+        return
+    msg = await m.reply(f"🤖 **Creating AI Playlist: {activity}...**")
+    results = search_jiosaavn_multiple(queries[activity], 8)
+    if not results:
+        await msg.edit("❌ No songs found!")
+        return
+    text = f"🤖 **AI Playlist: {activity.capitalize()}** {emojis[activity]}\n\n"
+    for i, s in enumerate(results, 1):
+        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
+    text += "\n📥 `/download [song name]`"
+    await msg.edit(text)
+
+@app.on_message(filters.command("album"))
+async def album(_, m: Message):
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
+        await m.reply("❌ Example: `/album Aashiqui 2`")
+        return
+    query = parts[1].strip()
+    msg = await m.reply(f"💿 **Fetching album:** `{query}`...")
+    results = search_jiosaavn_multiple(f"{query} album", 8)
+    if not results:
+        await msg.edit("❌ Not found!")
+        return
+    text = f"💿 **Album: {query}**\n\n"
+    for i, s in enumerate(results, 1):
+        d = int(s["duration"])
+        text += f"{i}. **{s['name']}** - {s['primaryArtists']} | ⏱ {d//60}:{d%60:02d}\n"
+    text += "\n📥 `/download [song name]`"
+    await msg.edit(text)
+
+@app.on_message(filters.command("artist"))
+async def artist(_, m: Message):
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
+        await m.reply("❌ Example: `/artist Arijit Singh`")
+        return
+    query = parts[1].strip()
+    msg = await m.reply(f"🔍 **Fetching songs by:** `{query}`...")
+    results = search_jiosaavn_multiple(f"{query} songs", 8)
+    if not results:
+        await msg.edit("❌ No results!")
+        return
+    text = f"🎤 **Songs by {query}:**\n\n"
+    for i, s in enumerate(results, 1):
+        d = int(s["duration"])
+        text += f"{i}. **{s['name']}** | ⏱ {d//60}:{d%60:02d}\n"
+    text += "\n📥 `/download [song name]`"
+    await msg.edit(text)
+
+# B
+
+@app.on_message(filters.command("batch"))
+async def batch(_, m: Message):
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip():
+        await m.reply("📦 **Batch Download!**\n\nSong list ke saath likho:\n\n```\n/batch Tum Hi Ho\nKesariya\nBlinding Lights```\n\n⚠️ Max 5 songs!")
+        return
+    songs = [s.strip() for s in parts[1].strip().split("\n") if s.strip()][:5]
+    if not songs:
+        await m.reply("❌ Song names likho!")
+        return
+    await m.reply(f"📦 **Downloading {len(songs)} songs...**\n⚠️ Wait karo!")
+    for i, song in enumerate(songs, 1):
+        try:
+            msg = await m.reply(f"⬇️ **{i}/{len(songs)}:** `{song}`...")
+            await send_song(m, song, msg)
+            await asyncio.sleep(2)
+        except:
+            await m.reply(f"❌ **{song}** failed!")
+
+@app.on_message(filters.command("birthday"))
+async def birthday(_, m: Message):
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
+        await m.reply("❌ Name likho!\nExample: `/birthday Rahul`")
+        return
+    name = parts[1].strip()
+    msg = await m.reply("🎂 **Fetching birthday songs...**")
+    results = search_jiosaavn_multiple("birthday songs hindi english", 7)
+    text = f"🎂 **Happy Birthday {name}!** 🎉\n\n🎵 **Songs:**\n\n"
+    for i, s in enumerate(results, 1):
+        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
+    text += f"\n🎊 Wishing **{name}** a wonderful birthday! 🎈🥳"
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🎵 Download Birthday Song", callback_data="dl_birthday")]])
+    await msg.edit(text, reply_markup=keyboard)
+
+# C
+
+@app.on_message(filters.command("chain"))
+async def chain(_, m: Message):
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
+        await m.reply("❌ Example: `/chain Tum Hi Ho`\n\nBot last letter se naya song dhundhega!")
+        return
+    query = parts[1].strip()
+    msg = await m.reply(f"🔗 **Starting chain from:** `{query}`...")
+    dl_url, title, duration, song_data = search_jiosaavn(query)
+    if not song_data:
+        await msg.edit("❌ Song not found!")
+        return
+    song_name = song_data["name"]
+    last_letter = song_name[-1].upper()
+    results = search_jiosaavn_multiple(f"songs starting with {last_letter} hindi", 10)
+    filtered = [s for s in results if s["name"][0].upper() == last_letter and s["name"].lower() != song_name.lower()]
+    if not filtered:
+        filtered = results[:5]
+    text = f"🔗 **Song Chain:**\n\n🎵 **{song_name}** → Last letter: **{last_letter}**\n\n"
+    text += f"🎵 **Next songs starting with '{last_letter}':**\n\n"
+    for i, s in enumerate(filtered[:5], 1):
+        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
+    text += f"\n🔗 Continue: `/chain {filtered[0]['name']}`" if filtered else ""
+    await msg.edit(text)
+
+@app.on_message(filters.command("compare"))
+async def compare(_, m: Message):
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or "|" not in parts[1]:
+        await m.reply("❌ Example: `/compare Tum Hi Ho | Kesariya`")
+        return
+    songs = parts[1].split("|")
+    if len(songs) != 2:
+        await m.reply("❌ Example: `/compare Tum Hi Ho | Kesariya`")
+        return
+    s1, s2 = songs[0].strip(), songs[1].strip()
+    msg = await m.reply("⚖️ **Comparing...**")
+    _, t1, d1, data1 = search_jiosaavn(s1)
+    _, t2, d2, data2 = search_jiosaavn(s2)
+    if not data1 or not data2:
+        await msg.edit("❌ One or both songs not found!")
+        return
+    await msg.edit(
+        f"⚖️ **Song Comparison:**\n\n"
+        f"**1️⃣ {data1['name']}**\n👤 {data1['primaryArtists']}\n"
+        f"💿 {data1.get('album',{}).get('name','Unknown')}\n"
+        f"⏱ {d1//60}:{d1%60:02d} | 📅 {data1.get('year','?')}\n\n"
+        f"**VS**\n\n"
+        f"**2️⃣ {data2['name']}**\n👤 {data2['primaryArtists']}\n"
+        f"💿 {data2.get('album',{}).get('name','Unknown')}\n"
+        f"⏱ {d2//60}:{d2%60:02d} | 📅 {data2.get('year','?')}\n\n"
+        f"📥 `/download {data1['name']}` or `/download {data2['name']}`"
     )
+
+# D
+
+@app.on_message(filters.command("daily"))
+async def daily(_, m: Message):
+    now = datetime.datetime.now()
+    keywords = ["hindi hits popular", "bollywood popular songs", "top songs india", "romantic hindi", "new hindi songs 2024"]
+    random.seed(now.day + now.month * 100)
+    query = random.choice(keywords)
+    random.seed()
+    msg = await m.reply("📅 **Fetching today's song...**")
+    results = search_jiosaavn_multiple(query, 20)
+    if not results:
+        await msg.edit("❌ No songs found!")
+        return
+    random.seed(now.day * now.month)
+    song = random.choice(results)
+    random.seed()
+    await send_song(m, song["name"], msg)
+
+@app.on_message(filters.command("download"))
+async def download(_, m: Message):
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
+        await m.reply("❌ Song name likho!\nExample: `/download Tum Hi Ho`")
+        return
+    msg = await m.reply(f"🔍 **Searching:** `{parts[1].strip()}`...")
+    await send_song(m, parts[1].strip(), msg)
+
+# E
+
+@app.on_message(filters.command("english"))
+async def english(_, m: Message):
+    msg = await m.reply("🔍 **Fetching English songs...**")
+    results = search_jiosaavn_multiple("top english hits 2024", 8)
+    text = "🎵 **Top English Songs:**\n\n"
+    for i, s in enumerate(results, 1):
+        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
+    text += "\n📥 `/download [song name]`"
+    await msg.edit(text)
+
+# F
+
+@app.on_message(filters.command("favorites"))
+async def show_favorites(_, m: Message):
+    user_id = m.from_user.id
+    if user_id not in favorites or not favorites[user_id]:
+        await m.reply("💾 No favorites yet!\nUse `/save [song]` to save songs.")
+        return
+    text = "⭐ **Your Favorites:**\n\n"
+    for i, s in enumerate(favorites[user_id], 1):
+        text += f"{i}. {s}\n"
+    text += "\n📥 `/download [song name]`"
+    await m.reply(text)
+
+@app.on_message(filters.command("findlyrics"))
+async def findlyrics(_, m: Message):
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
+        await m.reply("❌ Example: `/findlyrics tere bin nahi lagda`")
+        return
+    query = parts[1].strip()
+    msg = await m.reply(f"🔤 **Searching by lyrics:** `{query}`...")
+    try:
+        r = requests.get(f"https://lrclib.net/api/search?q={query}", headers={"User-Agent": "MusicBot/1.0"}, timeout=15)
+        data = r.json()
+        if data:
+            text = f"🔤 **Songs matching:** `{query}`\n\n"
+            for i, item in enumerate(data[:5], 1):
+                text += f"{i}. **{item.get('trackName','Unknown')}** - {item.get('artistName','Unknown')}\n"
+            text += "\n📥 `/download [song name]`"
+            await msg.edit(text)
+        else:
+            results = search_jiosaavn_multiple(query, 5)
+            text = f"🔤 **Possible songs:**\n\n"
+            for i, s in enumerate(results, 1):
+                text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
+            await msg.edit(text)
+    except Exception as e:
+        await msg.edit(f"❌ Error: `{str(e)}`")
+
+# G
+
+@app.on_message(filters.command("genre"))
+async def genre(_, m: Message):
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
+        await m.reply("🎸 **Choose genre:**\n`/genre rock` 🎸\n`/genre pop` 🎵\n`/genre jazz` 🎷\n`/genre classical` 🎻\n`/genre rap` 🎤\n`/genre indie` 🌿\n`/genre sufi` 🌙\n`/genre folk` 🪘")
+        return
+    g = parts[1].strip().lower()
+    queries = {
+        "rock": "rock songs", "pop": "pop hits", "jazz": "jazz music",
+        "classical": "classical instrumental", "rap": "rap hip hop",
+        "indie": "indie hindi", "sufi": "sufi songs", "folk": "folk india"
+    }
+    emojis = {"rock": "🎸", "pop": "🎵", "jazz": "🎷", "classical": "🎻", "rap": "🎤", "indie": "🌿", "sufi": "🌙", "folk": "🪘"}
+    if g not in queries:
+        await m.reply("❌ Available: `rock` `pop` `jazz` `classical` `rap` `indie` `sufi` `folk`")
+        return
+    msg = await m.reply(f"🔍 **Fetching {g} songs...**")
+    results = search_jiosaavn_multiple(queries[g], 8)
+    if not results:
+        await msg.edit("❌ No songs found!")
+        return
+    text = f"{emojis[g]} **{g.capitalize()} Songs:**\n\n"
+    for i, s in enumerate(results, 1):
+        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
+    text += "\n📥 `/download [song name]`"
+    await msg.edit(text)
+
+@app.on_message(filters.command("guesssong"))
+async def guesssong(_, m: Message):
+    msg = await m.reply("🎯 **Fetching quiz song...**")
+    chat_id = m.chat.id
+    results = search_jiosaavn_multiple("popular hindi songs", 15)
+    if not results:
+        await msg.edit("❌ Could not fetch!")
+        return
+    song = random.choice(results)
+    title = song["name"]
+    artist = song["primaryArtists"]
+    lyrics_text, _ = get_lyrics(f"{title} - {artist}")
+    if lyrics_text:
+        lines = [l.strip() for l in lyrics_text.split("\n") if len(l.strip()) > 20]
+        line = random.choice(lines[:10]) if lines else f"Hint: Artist is **{artist}**"
+    else:
+        line = f"Hint: Artist is **{artist}**"
+    active_quiz[chat_id] = {"answer": title.lower(), "title": title, "artist": artist, "type": "guess"}
+    await msg.edit(
+        f"🎯 **Guess The Song!**\n\n"
+        f"🎵 **Lyrics:**\n_{line}_\n\n"
+        f"💭 Reply with song name!\n⏱ 30 seconds!\n\nUse `/skip` to skip."
+    )
+    await asyncio.sleep(30)
+    if chat_id in active_quiz and active_quiz[chat_id].get("type") == "guess":
+        del active_quiz[chat_id]
+        await m.reply(f"⏱ **Time's up!**\nAnswer: **{title}** by {artist}")
+
+# H
 
 @app.on_message(filters.command("help"))
 async def help_cmd(_, m: Message):
     await m.reply(
-        "❓ **Help Menu:**\n\n"
+        "❓ **Help — All Commands:**\n\n"
         "📥 `/download Tum Hi Ho`\n"
-        "🎧 `/quality Tum Hi Ho` - 128/192/320kbps\n"
-        "🎵 `/preview Tum Hi Ho` - 30sec clip\n"
+        "🎧 `/quality Tum Hi Ho`\n"
+        "🎵 `/preview Tum Hi Ho`\n"
         "🔍 `/search Arijit Singh`\n"
         "ℹ️ `/info Blinding Lights`\n"
-        "📝 `/lyrics Tum Hi Ho - Arijit Singh`\n"
+        "📝 `/lyrics Tum Hi Ho - Arijit Singh`\n\n"
         "🎭 `/mood happy/sad/party/romantic/workout/chill`\n"
         "🎸 `/genre rock/pop/jazz/classical/rap/indie/sufi/folk`\n"
         "🌐 `/hindi` `/punjabi` `/english`\n"
@@ -362,7 +602,7 @@ async def help_cmd(_, m: Message):
         "🎵 `/similar Tum Hi Ho`\n"
         "🎼 `/karaoke Tum Hi Ho`\n"
         "🎤 `/similarartist Arijit Singh`\n"
-        "🔗 `/chain Tum Hi Ho`\n"
+        "🔗 `/chain Tum Hi Ho`\n\n"
         "📅 `/daily`\n"
         "🌍 `/trending`\n"
         "🎯 `/recommend`\n"
@@ -373,116 +613,50 @@ async def help_cmd(_, m: Message):
         "🌍 `/regional marathi`\n"
         "🎭 `/vibe Tum Hi Ho`\n"
         "🤖 `/ai_playlist gym`\n"
-        "💬 `/quote`\n"
+        "💬 `/quote`\n\n"
         "🎯 `/guesssong`\n"
         "🎮 `/musicquiz`\n"
         "⭐ `/rate Tum Hi Ho`\n"
         "🏆 `/topsongs`\n"
         "⚖️ `/compare Tum Hi Ho | Kesariya`\n"
-        "📦 `/batch Tum Hi Ho\\nKesariya`\n"
-        "🔤 `/findlyrics tere bin nahi lagda`\n"
-        "📊 `/topindia` `/topbollywood` `/top2025`\n"
+        "📦 `/batch`\n"
+        "🔤 `/findlyrics tere bin nahi lagda`\n\n"
+        "📊 `/topindia` `/topbollywood` `/top2025`\n\n"
         "👤 `/profile`\n"
         "🏆 `/leaderboard`\n"
-        "🔔 `/subscribe`\n"
+        "🔔 `/subscribe` | 🔕 `/unsubscribe`\n"
         "⭐ `/save Tum Hi Ho`\n"
         "🗑 `/removefav Tum Hi Ho`\n"
         "💾 `/favorites`\n"
         "📜 `/history`\n"
         "📊 `/stats`\n"
         "👤 `/mystats`\n"
-        "🎵 `/lastdownload`"
+        "🎵 `/lastdownload`\n\n"
+        "⚠️ **Issues?** Contact: @ZeroShader"
     )
 
-@app.on_message(filters.command("play"))
-async def play_cs(_, m: Message):
-    await m.reply("🔜 **Coming Soon!**\n\nUse 📥 `/download [song]` for now!")
-
-@app.on_message(filters.command("download"))
-async def download(_, m: Message):
-    parts = m.text.split(None, 1)
-    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
-        await m.reply("❌ Song name likho!\nExample: `/download Tum Hi Ho`")
-        return
-    msg = await m.reply(f"🔍 **Searching:** `{parts[1].strip()}`...")
-    await send_song(m, parts[1].strip(), msg)
-
-@app.on_message(filters.command("quality"))
-async def quality_select(_, m: Message):
-    parts = m.text.split(None, 1)
-    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
-        await m.reply("❌ Song name likho!\nExample: `/quality Tum Hi Ho`")
-        return
-    song = parts[1].strip()
-    keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton("🎵 128 kbps", callback_data=f"qual_128_{song[:30]}"),
-        InlineKeyboardButton("🎵 192 kbps", callback_data=f"qual_192_{song[:30]}"),
-        InlineKeyboardButton("🎵 320 kbps", callback_data=f"qual_320_{song[:30]}"),
-    ]])
-    await m.reply(
-        f"🎧 **Select Quality for:**\n`{song}`\n\n"
-        "128kbps - Saves data 📶\n"
-        "192kbps - Balanced ⚖️\n"
-        "320kbps - Best quality 🎵",
-        reply_markup=keyboard
-    )
-
-@app.on_message(filters.command("preview"))
-async def preview(_, m: Message):
-    parts = m.text.split(None, 1)
-    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
-        await m.reply("❌ Song name likho!\nExample: `/preview Tum Hi Ho`")
-        return
-    query = parts[1].strip()
-    msg = await m.reply(f"🎵 **Fetching preview:** `{query}`...")
-    try:
-        url = f"https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query={query}&page=1&limit=1"
-        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-        data = r.json()
-        results = data["data"]["results"]
-        if not results:
-            await msg.edit("❌ Song not found!")
-            return
-        song = results[0]
-        preview_url = song.get("previewUrl", None)
-        if not preview_url:
-            dl_url = song["downloadUrl"][0]["link"]
-            preview_url = dl_url
-        title = song["name"]
-        artist = song["primaryArtists"]
-        await msg.edit(f"⬇️ **Downloading preview:** `{title}`...")
-        path = download_song(preview_url, f"preview_{title}")
-        await app.send_audio(
-            m.chat.id, path,
-            caption=f"🎵 **Preview:** {title} - {artist}\n⏱ 30 sec clip",
-            title=f"Preview - {title}"
-        )
-        await msg.delete()
-        try:
-            os.remove(path)
-        except:
-            pass
-    except Exception as e:
-        await msg.edit(f"❌ Error: `{str(e)}`")
-
-@app.on_message(filters.command("search"))
-async def search(_, m: Message):
-    parts = m.text.split(None, 1)
-    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
-        await m.reply("❌ Song name likho!\nExample: `/search Arijit Singh`")
-        return
-    query = parts[1].strip()
-    msg = await m.reply(f"🔍 **Searching:** `{query}`...")
-    results = search_jiosaavn_multiple(query, 5)
-    if not results:
-        await msg.edit("❌ No results found!")
-        return
-    text = f"🔍 **Results for:** `{query}`\n\n"
-    for i, song in enumerate(results, 1):
-        d = int(song["duration"])
-        text += f"{i}. **{song['name']}**\n   👤 {song['primaryArtists']} | ⏱ {d//60}:{d%60:02d}\n\n"
-    text += "📥 `/download [song name]`"
+@app.on_message(filters.command("hindi"))
+async def hindi(_, m: Message):
+    msg = await m.reply("🔍 **Fetching Hindi songs...**")
+    results = search_jiosaavn_multiple("top hindi songs 2024", 8)
+    text = "🇮🇳 **Top Hindi Songs:**\n\n"
+    for i, s in enumerate(results, 1):
+        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
+    text += "\n📥 `/download [song name]`"
     await msg.edit(text)
+
+@app.on_message(filters.command("history"))
+async def show_history(_, m: Message):
+    user_id = m.from_user.id
+    if user_id not in history or not history[user_id]:
+        await m.reply("📜 No history yet!\nDownload songs to see history.")
+        return
+    text = "📜 **Recent Songs:**\n\n"
+    for i, s in enumerate(history[user_id], 1):
+        text += f"{i}. {s}\n"
+    await m.reply(text)
+
+# I
 
 @app.on_message(filters.command("info"))
 async def song_info(_, m: Message):
@@ -509,6 +683,89 @@ async def song_info(_, m: Message):
         f"📥 `/download {song_data['name']}`"
     )
 
+# K
+
+@app.on_message(filters.command("karaoke"))
+async def karaoke(_, m: Message):
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
+        await m.reply("❌ Example: `/karaoke Tum Hi Ho`")
+        return
+    query = parts[1].strip()
+    msg = await m.reply(f"🎼 **Searching karaoke/instrumental:** `{query}`...")
+    results = []
+    for search_q in [f"{query} karaoke", f"{query} instrumental", f"{query} without vocals", f"{query} music only"]:
+        r = search_jiosaavn_multiple(search_q, 3)
+        results += r
+    seen = set()
+    unique = []
+    for s in results:
+        if s["name"] not in seen:
+            seen.add(s["name"])
+            unique.append(s)
+    if not unique:
+        await msg.edit(
+            f"❌ **No karaoke found for:** `{query}`\n\n"
+            f"💡 Try:\n"
+            f"📥 `/download {query} karaoke`\n"
+            f"📥 `/download {query} instrumental`"
+        )
+        return
+    text = f"🎼 **Karaoke/Instrumental for:** `{query}`\n\n"
+    for i, s in enumerate(unique[:6], 1):
+        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
+    text += "\n📥 `/download [song name]`"
+    await msg.edit(text)
+
+# L
+
+@app.on_message(filters.command("lastdownload"))
+async def lastdownload(_, m: Message):
+    user_id = m.from_user.id
+    if user_id not in last_downloaded:
+        await m.reply("🎵 No song downloaded yet!\nUse `/download [song]`")
+        return
+    s = last_downloaded[user_id]
+    await m.reply(
+        f"🎵 **Last Downloaded:**\n\n"
+        f"🎶 **{s['title']}**\n"
+        f"⏱ {s['duration']} | 👤 {s['by']}\n\n"
+        f"📥 `/download {s['title']}`"
+    )
+
+@app.on_message(filters.command("leaderboard"))
+async def leaderboard(_, m: Message):
+    if not user_stats:
+        await m.reply("❌ No data yet!\nDownload songs to appear here.")
+        return
+    sorted_users = sorted(user_stats.items(), key=lambda x: x[1]["downloads"], reverse=True)
+    text = "🏆 **Top Music Lovers:**\n\n"
+    medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+    for i, (uid, data) in enumerate(sorted_users[:10], 0):
+        name = data.get("name", f"User {i+1}")
+        text += f"{medals[i]} **{name}** — {data['downloads']} downloads\n"
+    text += "\n📥 Download more to climb up! 🚀"
+    await m.reply(text)
+
+@app.on_message(filters.command("letter"))
+async def letter(_, m: Message):
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip():
+        await m.reply("❌ Example: `/letter T`")
+        return
+    l = parts[1].strip()[0].upper()
+    if not l.isalpha():
+        await m.reply("❌ Valid letter likho!")
+        return
+    msg = await m.reply(f"🔤 **Songs starting with:** `{l}`...")
+    results = search_jiosaavn_multiple(f"songs starting with {l} hindi", 10)
+    filtered = [s for s in results if s["name"].upper().startswith(l)] or results[:8]
+    text = f"🔤 **Songs Starting with '{l}':**\n\n"
+    for i, s in enumerate(filtered[:8], 1):
+        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
+    text += "\n📥 `/download [song name]`"
+    await msg.edit(text)
+
 @app.on_message(filters.command("lyrics"))
 async def lyrics(_, m: Message):
     parts = m.text.split(None, 1)
@@ -533,69 +790,7 @@ async def lyrics(_, m: Message):
             remaining = remaining[4096:]
             await m.reply(chunk)
 
-@app.on_message(filters.command("karaoke"))
-async def karaoke(_, m: Message):
-    parts = m.text.split(None, 1)
-    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
-        await m.reply("❌ Example: `/karaoke Tum Hi Ho`")
-        return
-    query = parts[1].strip()
-    msg = await m.reply(f"🎼 **Searching karaoke/instrumental:** `{query}`...")
-    results = search_jiosaavn_multiple(f"{query} instrumental karaoke", 5)
-    if not results:
-        await msg.edit("❌ No karaoke found!")
-        return
-    text = f"🎼 **Karaoke/Instrumental for:** `{query}`\n\n"
-    for i, s in enumerate(results, 1):
-        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
-    text += "\n📥 `/download [song name]`"
-    await msg.edit(text)
-
-@app.on_message(filters.command("similarartist"))
-async def similarartist(_, m: Message):
-    parts = m.text.split(None, 1)
-    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
-        await m.reply("❌ Example: `/similarartist Arijit Singh`")
-        return
-    query = parts[1].strip()
-    msg = await m.reply(f"🎤 **Finding artists similar to:** `{query}`...")
-    results = search_jiosaavn_multiple(f"artists like {query} similar", 8)
-    if not results:
-        await msg.edit("❌ No results found!")
-        return
-    artists = list(dict.fromkeys([s["primaryArtists"].split(",")[0].strip() for s in results]))
-    artists = [a for a in artists if a.lower() != query.lower()][:6]
-    text = f"🎤 **Artists Similar to {query}:**\n\n"
-    for i, artist in enumerate(artists, 1):
-        text += f"{i}. **{artist}**\n"
-    text += f"\n🎵 Use `/artist [name]` to see their songs!"
-    await msg.edit(text)
-
-@app.on_message(filters.command("chain"))
-async def chain(_, m: Message):
-    parts = m.text.split(None, 1)
-    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
-        await m.reply("❌ Example: `/chain Tum Hi Ho`\n\nBot last letter se naya song dhundhega!")
-        return
-    query = parts[1].strip()
-    msg = await m.reply(f"🔗 **Starting chain from:** `{query}`...")
-    dl_url, title, duration, song_data = search_jiosaavn(query)
-    if not song_data:
-        await msg.edit("❌ Song not found!")
-        return
-    song_name = song_data["name"]
-    last_letter = song_name[-1].upper()
-    results = search_jiosaavn_multiple(f"songs starting with {last_letter} hindi", 10)
-    filtered = [s for s in results if s["name"][0].upper() == last_letter and s["name"].lower() != song_name.lower()]
-    if not filtered:
-        filtered = results[:5]
-    text = f"🔗 **Song Chain:**\n\n"
-    text += f"🎵 **{song_name}** → Last letter: **{last_letter}**\n\n"
-    text += f"🎵 **Next songs starting with '{last_letter}':**\n\n"
-    for i, s in enumerate(filtered[:5], 1):
-        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
-    text += f"\n🔗 Continue: `/chain {filtered[0]['name']}`" if filtered else ""
-    await msg.edit(text)
+# M
 
 @app.on_message(filters.command("mood"))
 async def mood(_, m: Message):
@@ -604,7 +799,11 @@ async def mood(_, m: Message):
         await m.reply("🎭 **Choose mood:**\n`/mood happy` 😊\n`/mood sad` 😢\n`/mood party` 🎉\n`/mood romantic` 💕\n`/mood workout` 💪\n`/mood chill` 😌")
         return
     mood_type = parts[1].strip().lower()
-    queries = {"happy": "happy upbeat bollywood", "sad": "sad emotional hindi", "party": "party dance hindi", "romantic": "romantic love hindi", "workout": "workout gym motivation", "chill": "chill relaxing hindi"}
+    queries = {
+        "happy": "happy upbeat bollywood", "sad": "sad emotional hindi",
+        "party": "party dance hindi", "romantic": "romantic love hindi",
+        "workout": "workout gym motivation", "chill": "chill relaxing hindi"
+    }
     emojis = {"happy": "😊", "sad": "😢", "party": "🎉", "romantic": "💕", "workout": "💪", "chill": "😌"}
     if mood_type not in queries:
         await m.reply("❌ Available: `happy` `sad` `party` `romantic` `workout` `chill`")
@@ -620,38 +819,160 @@ async def mood(_, m: Message):
     text += "\n📥 `/download [song name]`"
     await msg.edit(text)
 
-@app.on_message(filters.command("genre"))
-async def genre(_, m: Message):
-    parts = m.text.split(None, 1)
-    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
-        await m.reply("🎸 **Choose genre:**\n`/genre rock` 🎸\n`/genre pop` 🎵\n`/genre jazz` 🎷\n`/genre classical` 🎻\n`/genre rap` 🎤\n`/genre indie` 🌿\n`/genre sufi` 🌙\n`/genre folk` 🪘")
+@app.on_message(filters.command("musicquiz"))
+async def musicquiz(_, m: Message):
+    msg = await m.reply("🎮 **Preparing Music Quiz...**")
+    chat_id = m.chat.id
+    results = search_jiosaavn_multiple("popular bollywood songs", 20)
+    if not results:
+        await msg.edit("❌ Could not fetch!")
         return
-    g = parts[1].strip().lower()
-    queries = {"rock": "rock songs", "pop": "pop hits", "jazz": "jazz music", "classical": "classical instrumental", "rap": "rap hip hop", "indie": "indie hindi", "sufi": "sufi songs", "folk": "folk india"}
-    emojis = {"rock": "🎸", "pop": "🎵", "jazz": "🎷", "classical": "🎻", "rap": "🎤", "indie": "🌿", "sufi": "🌙", "folk": "🪘"}
-    if g not in queries:
-        await m.reply("❌ Available: `rock` `pop` `jazz` `classical` `rap` `indie` `sufi` `folk`")
+    correct_song = random.choice(results)
+    correct_title = correct_song["name"]
+    correct_artist = correct_song["primaryArtists"]
+    wrong_songs = [s for s in results if s["name"] != correct_title]
+    wrong_options = random.sample(wrong_songs, min(3, len(wrong_songs)))
+    options = [correct_title] + [s["name"] for s in wrong_options]
+    random.shuffle(options)
+    correct_idx = options.index(correct_title)
+    option_labels = ["A", "B", "C", "D"]
+    active_quiz[chat_id] = {
+        "answer": correct_title.lower(), "title": correct_title,
+        "artist": correct_artist, "type": "quiz", "options": options
+    }
+    text = f"🎮 **Music Quiz!**\n\n👤 **Artist:** {correct_artist}\n\n❓ **Which song is by this artist?**\n\n"
+    for i, opt in enumerate(options):
+        text += f"**{option_labels[i]}.** {opt}\n"
+    text += "\n💭 Reply with A, B, C or D!\n⏱ 20 seconds!"
+    await msg.edit(text)
+    await asyncio.sleep(20)
+    if chat_id in active_quiz and active_quiz[chat_id].get("type") == "quiz":
+        del active_quiz[chat_id]
+        await m.reply(f"⏱ **Time's up!**\nAnswer: **{option_labels[correct_idx]}. {correct_title}** by {correct_artist}")
+
+@app.on_message(filters.command("mystats"))
+async def mystats(_, m: Message):
+    user_id = m.from_user.id
+    if user_id not in user_stats or user_stats[user_id]["downloads"] == 0:
+        await m.reply(f"👤 **{m.from_user.first_name}'s Stats:**\n\n📥 Downloads: 0\n\nStart downloading! 🎵")
         return
-    msg = await m.reply(f"🔍 **Fetching {g} songs...**")
-    results = search_jiosaavn_multiple(queries[g], 8)
+    total = user_stats[user_id]["downloads"]
+    songs = user_stats[user_id]["songs"]
+    most = max(set(songs), key=songs.count) if songs else "None"
+    await m.reply(
+        f"👤 **{m.from_user.first_name}'s Stats:**\n\n"
+        f"📥 Downloads: {total}\n"
+        f"🎵 Most Downloaded: {most}\n"
+        f"📜 History: {len(history.get(user_id, []))}\n"
+        f"⭐ Favorites: {len(favorites.get(user_id, []))}\n"
+        f"🎸 Fav Genre: {get_user_genre(user_id)}"
+    )
+
+# N
+
+@app.on_message(filters.command("night"))
+async def night(_, m: Message):
+    msg = await m.reply("🌙 **Fetching late night songs...**")
+    results = search_jiosaavn_multiple("late night chill sad songs hindi", 10)
     if not results:
         await msg.edit("❌ No songs found!")
         return
-    text = f"{emojis[g]} **{g.capitalize()} Songs:**\n\n"
-    for i, s in enumerate(results, 1):
-        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
-    text += "\n📥 `/download [song name]`"
-    await msg.edit(text)
+    await send_song(m, random.choice(results)["name"], msg)
 
-@app.on_message(filters.command("hindi"))
-async def hindi(_, m: Message):
-    msg = await m.reply("🔍 **Fetching Hindi songs...**")
-    results = search_jiosaavn_multiple("top hindi songs 2024", 8)
-    text = "🇮🇳 **Top Hindi Songs:**\n\n"
-    for i, s in enumerate(results, 1):
-        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
-    text += "\n📥 `/download [song name]`"
-    await msg.edit(text)
+# P
+
+@app.on_message(filters.command("play"))
+async def play_cs(_, m: Message):
+    await m.reply("🔜 **Coming Soon!**\n\nUse 📥 `/download [song]` for now!")
+
+@app.on_message(filters.command("playlist"))
+async def playlist(_, m: Message):
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
+        await m.reply("❌ Example: `/playlist happy`\nAvailable: `happy` `sad` `party` `romantic` `workout` `chill`")
+        return
+    mood_type = parts[1].strip().lower()
+    queries = {
+        "happy": "happy upbeat bollywood", "sad": "sad emotional hindi",
+        "party": "party dance hindi", "romantic": "romantic love hindi",
+        "workout": "workout gym motivation", "chill": "chill relaxing hindi"
+    }
+    emojis = {"happy": "😊", "sad": "😢", "party": "🎉", "romantic": "💕", "workout": "💪", "chill": "😌"}
+    if mood_type not in queries:
+        await m.reply("❌ Available: `happy` `sad` `party` `romantic` `workout` `chill`")
+        return
+    results = search_jiosaavn_multiple(queries[mood_type], 5)
+    await m.reply(f"🎵 **{mood_type.capitalize()} Playlist** {emojis[mood_type]}\nDownloading {len(results)} songs...\n⚠️ Few minutes!")
+    for s in results:
+        try:
+            msg = await m.reply(f"⬇️ `{s['name']}`...")
+            await send_song(m, s["name"], msg)
+            await asyncio.sleep(2)
+        except:
+            pass
+
+@app.on_message(filters.command("preview"))
+async def preview(_, m: Message):
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
+        await m.reply("❌ Song name likho!\nExample: `/preview Tum Hi Ho`")
+        return
+    query = parts[1].strip()
+    msg = await m.reply(f"🎵 **Fetching preview:** `{query}`...")
+    try:
+        url = f"https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query={query}&page=1&limit=1"
+        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        data = r.json()
+        results = data["data"]["results"]
+        if not results:
+            await msg.edit("❌ Song not found!")
+            return
+        song = results[0]
+        preview_url = song.get("previewUrl", None)
+        if not preview_url:
+            preview_url = song["downloadUrl"][0]["link"]
+        title = song["name"]
+        artist = song["primaryArtists"]
+        await msg.edit(f"⬇️ **Downloading preview:** `{title}`...")
+        path = download_song(preview_url, f"preview_{title}")
+        await app.send_audio(
+            m.chat.id, path,
+            caption=f"🎵 **Preview:** {title} - {artist}\n⏱ 30 sec clip",
+            title=f"Preview - {title}"
+        )
+        await msg.delete()
+        try:
+            os.remove(path)
+        except:
+            pass
+    except Exception as e:
+        await msg.edit(f"❌ Error: `{str(e)}`")
+
+@app.on_message(filters.command("profile"))
+async def profile(_, m: Message):
+    user_id = m.from_user.id
+    name = m.from_user.first_name
+    joined = join_dates.get(user_id, "Unknown")
+    downloads = user_stats.get(user_id, {}).get("downloads", 0)
+    songs = user_stats.get(user_id, {}).get("songs", [])
+    most = max(set(songs), key=songs.count) if songs else "None"
+    fav_count = len(favorites.get(user_id, []))
+    hist_count = len(history.get(user_id, []))
+    genre = get_user_genre(user_id)
+    rated = sum(1 for r in song_ratings.values() if user_id in r)
+    level = "🥉 Beginner" if downloads < 10 else "🥈 Music Lover" if downloads < 50 else "🥇 Music Master" if downloads < 100 else "💎 Legend"
+    await m.reply(
+        f"👤 **{name}'s Music Profile**\n\n"
+        f"📅 Member Since: {joined}\n"
+        f"📥 Total Downloads: {downloads}\n"
+        f"🎵 Most Downloaded: {most}\n"
+        f"🎸 Fav Genre: {genre}\n"
+        f"⭐ Favorites: {fav_count}\n"
+        f"📜 History: {hist_count}\n"
+        f"⭐ Songs Rated: {rated}\n"
+        f"🔔 Subscribed: {'Yes ✅' if user_id in subscribers else 'No ❌'}\n\n"
+        f"🏅 **Level:** {level}"
+    )
 
 @app.on_message(filters.command("punjabi"))
 async def punjabi(_, m: Message):
@@ -663,91 +984,34 @@ async def punjabi(_, m: Message):
     text += "\n📥 `/download [song name]`"
     await msg.edit(text)
 
-@app.on_message(filters.command("english"))
-async def english(_, m: Message):
-    msg = await m.reply("🔍 **Fetching English songs...**")
-    results = search_jiosaavn_multiple("top english hits 2024", 8)
-    text = "🎵 **Top English Songs:**\n\n"
-    for i, s in enumerate(results, 1):
-        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
-    text += "\n📥 `/download [song name]`"
-    await msg.edit(text)
+# Q
 
-@app.on_message(filters.command("artist"))
-async def artist(_, m: Message):
+@app.on_message(filters.command("quality"))
+async def quality_select(_, m: Message):
     parts = m.text.split(None, 1)
     if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
-        await m.reply("❌ Example: `/artist Arijit Singh`")
+        await m.reply("❌ Song name likho!\nExample: `/quality Tum Hi Ho`")
         return
-    query = parts[1].strip()
-    msg = await m.reply(f"🔍 **Fetching songs by:** `{query}`...")
-    results = search_jiosaavn_multiple(f"{query} songs", 8)
-    if not results:
-        await msg.edit("❌ No results!")
-        return
-    text = f"🎤 **Songs by {query}:**\n\n"
-    for i, s in enumerate(results, 1):
-        d = int(s["duration"])
-        text += f"{i}. **{s['name']}** | ⏱ {d//60}:{d%60:02d}\n"
-    text += "\n📥 `/download [song name]`"
-    await msg.edit(text)
+    song = parts[1].strip()
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("🎵 128 kbps", callback_data=f"qual_128_{song[:30]}"),
+        InlineKeyboardButton("🎵 192 kbps", callback_data=f"qual_192_{song[:30]}"),
+        InlineKeyboardButton("🎵 320 kbps", callback_data=f"qual_320_{song[:30]}"),
+    ]])
+    await m.reply(
+        f"🎧 **Select Quality for:**\n`{song}`\n\n"
+        "128kbps — Saves data 📶\n"
+        "192kbps — Balanced ⚖️\n"
+        "320kbps — Best quality 🎵",
+        reply_markup=keyboard
+    )
 
-@app.on_message(filters.command("topartist"))
-async def topartist(_, m: Message):
-    parts = m.text.split(None, 1)
-    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
-        await m.reply("❌ Example: `/topartist Arijit Singh`")
-        return
-    query = parts[1].strip()
-    msg = await m.reply(f"🏆 **Fetching top by:** `{query}`...")
-    results = search_jiosaavn_multiple(f"best of {query}", 8)
-    if not results:
-        await msg.edit("❌ No results!")
-        return
-    text = f"🏆 **Top Songs by {query}:**\n\n"
-    for i, s in enumerate(results, 1):
-        d = int(s["duration"])
-        text += f"{i}. **{s['name']}** | ⏱ {d//60}:{d%60:02d}\n"
-    text += "\n📥 `/download [song name]`"
-    await msg.edit(text)
+@app.on_message(filters.command("quote"))
+async def quote(_, m: Message):
+    msg = await m.reply("💬 **Fetching quote...**")
+    await msg.edit(f"💬 **Music Quote:**\n\n{fetch_quote()}")
 
-@app.on_message(filters.command("album"))
-async def album(_, m: Message):
-    parts = m.text.split(None, 1)
-    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
-        await m.reply("❌ Example: `/album Aashiqui 2`")
-        return
-    query = parts[1].strip()
-    msg = await m.reply(f"💿 **Fetching album:** `{query}`...")
-    results = search_jiosaavn_multiple(f"{query} album", 8)
-    if not results:
-        await msg.edit("❌ Not found!")
-        return
-    text = f"💿 **Album: {query}**\n\n"
-    for i, s in enumerate(results, 1):
-        d = int(s["duration"])
-        text += f"{i}. **{s['name']}** - {s['primaryArtists']} | ⏱ {d//60}:{d%60:02d}\n"
-    text += "\n📥 `/download [song name]`"
-    await msg.edit(text)
-
-@app.on_message(filters.command("letter"))
-async def letter(_, m: Message):
-    parts = m.text.split(None, 1)
-    if len(parts) < 2 or not parts[1].strip():
-        await m.reply("❌ Example: `/letter T`")
-        return
-    l = parts[1].strip()[0].upper()
-    if not l.isalpha():
-        await m.reply("❌ Valid letter likho!")
-        return
-    msg = await m.reply(f"🔤 **Songs starting with:** `{l}`...")
-    results = search_jiosaavn_multiple(f"songs starting with {l} hindi", 10)
-    filtered = [s for s in results if s["name"].upper().startswith(l)] or results[:8]
-    text = f"🔤 **Songs Starting with '{l}':**\n\n"
-    for i, s in enumerate(filtered[:8], 1):
-        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
-    text += "\n📥 `/download [song name]`"
-    await msg.edit(text)
+# R
 
 @app.on_message(filters.command("random"))
 async def random_song(_, m: Message):
@@ -758,6 +1022,130 @@ async def random_song(_, m: Message):
         await msg.edit("❌ No songs found!")
         return
     await send_song(m, random.choice(results)["name"], msg)
+
+@app.on_message(filters.command("rate"))
+async def rate(_, m: Message):
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
+        await m.reply("❌ Example: `/rate Tum Hi Ho`")
+        return
+    song = parts[1].strip()
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("1⭐", callback_data=f"rate_1_{song[:25]}"),
+        InlineKeyboardButton("2⭐", callback_data=f"rate_2_{song[:25]}"),
+        InlineKeyboardButton("3⭐", callback_data=f"rate_3_{song[:25]}"),
+        InlineKeyboardButton("4⭐", callback_data=f"rate_4_{song[:25]}"),
+        InlineKeyboardButton("5⭐", callback_data=f"rate_5_{song[:25]}"),
+    ]])
+    await m.reply(f"⭐ **Rate:** `{song}`", reply_markup=keyboard)
+
+@app.on_message(filters.command("recommend"))
+async def recommend(_, m: Message):
+    user_id = m.from_user.id
+    msg = await m.reply("🎯 **Finding recommendations...**")
+    if user_id in history and history[user_id]:
+        last = history[user_id][0]
+        results = search_jiosaavn_multiple(f"songs like {last}", 5)
+        text = "🎯 **Based on Your History:**\n\n"
+    else:
+        results = search_jiosaavn_multiple("best hindi songs popular", 5)
+        text = "🎯 **Recommended for You:**\n\n"
+    if not results:
+        await msg.edit("❌ Could not fetch!")
+        return
+    for i, s in enumerate(results, 1):
+        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
+    text += "\n📥 `/download [song name]`"
+    await msg.edit(text)
+
+@app.on_message(filters.command("regional"))
+async def regional(_, m: Message):
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
+        await m.reply("🌍 **Choose:**\n`/regional marathi`\n`/regional tamil`\n`/regional telugu`\n`/regional bhojpuri`\n`/regional bengali`\n`/regional gujarati`\n`/regional kannada`\n`/regional malayalam`")
+        return
+    lang = parts[1].strip().lower()
+    msg = await m.reply(f"🌍 **Fetching {lang} songs...**")
+    results = search_jiosaavn_multiple(f"top {lang} songs popular", 8)
+    if not results:
+        await msg.edit("❌ No songs found!")
+        return
+    text = f"🌍 **Top {lang.capitalize()} Songs:**\n\n"
+    for i, s in enumerate(results, 1):
+        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
+    text += "\n📥 `/download [song name]`"
+    await msg.edit(text)
+
+@app.on_message(filters.command("removefav"))
+async def removefav(_, m: Message):
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
+        await m.reply("❌ Example: `/removefav Tum Hi Ho`")
+        return
+    query = parts[1].strip()
+    user_id = m.from_user.id
+    if user_id not in favorites or query not in favorites[user_id]:
+        await m.reply("❌ Not in favorites!")
+        return
+    favorites[user_id].remove(query)
+    await m.reply(f"🗑 **Removed:** `{query}`")
+
+# S
+
+@app.on_message(filters.command("save"))
+async def save(_, m: Message):
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
+        await m.reply("❌ Example: `/save Tum Hi Ho`")
+        return
+    query = parts[1].strip()
+    user_id = m.from_user.id
+    if user_id not in favorites:
+        favorites[user_id] = []
+    if query in favorites[user_id]:
+        await m.reply("⭐ Already in favorites!")
+        return
+    if len(favorites[user_id]) >= 20:
+        await m.reply("❌ Favorites full! Max 20.")
+        return
+    favorites[user_id].append(query)
+    await m.reply(f"⭐ **Saved:** `{query}`")
+
+@app.on_message(filters.command("search"))
+async def search(_, m: Message):
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
+        await m.reply("❌ Song name likho!\nExample: `/search Arijit Singh`")
+        return
+    query = parts[1].strip()
+    msg = await m.reply(f"🔍 **Searching:** `{query}`...")
+    results = search_jiosaavn_multiple(query, 5)
+    if not results:
+        await msg.edit("❌ No results found!")
+        return
+    text = f"🔍 **Results for:** `{query}`\n\n"
+    for i, song in enumerate(results, 1):
+        d = int(song["duration"])
+        text += f"{i}. **{song['name']}**\n   👤 {song['primaryArtists']} | ⏱ {d//60}:{d%60:02d}\n\n"
+    text += "📥 `/download [song name]`"
+    await msg.edit(text)
+
+@app.on_message(filters.command("short"))
+async def short(_, m: Message):
+    msg = await m.reply("⏱ **Fetching short songs...**")
+    results = search_jiosaavn_multiple("short songs 2 minutes", 15)
+    text = "⏱ **Short Songs (Under 3 Mins):**\n\n"
+    count = 0
+    for s in results:
+        d = int(s["duration"])
+        if d <= 180:
+            count += 1
+            text += f"{count}. **{s['name']}** - {s['primaryArtists']} | ⏱ {d//60}:{d%60:02d}\n"
+    if count == 0:
+        await msg.edit("❌ No short songs found!")
+        return
+    text += "\n📥 `/download [song name]`"
+    await msg.edit(text)
 
 @app.on_message(filters.command("similar"))
 async def similar(_, m: Message):
@@ -790,138 +1178,252 @@ async def similar(_, m: Message):
     text += "\n📥 `/download [song name]`"
     await msg.edit(text)
 
-@app.on_message(filters.command("daily"))
-async def daily(_, m: Message):
-    now = datetime.datetime.now()
-    keywords = ["hindi hits popular", "bollywood popular songs", "top songs india", "romantic hindi", "new hindi songs 2024"]
-    random.seed(now.day + now.month * 100)
-    query = random.choice(keywords)
-    random.seed()
-    msg = await m.reply("📅 **Fetching today's song...**")
-    results = search_jiosaavn_multiple(query, 20)
-    if not results:
-        await msg.edit("❌ No songs found!")
+@app.on_message(filters.command("similarartist"))
+async def similarartist(_, m: Message):
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
+        await m.reply("❌ Example: `/similarartist Arijit Singh`")
         return
-    random.seed(now.day * now.month)
-    song = random.choice(results)
-    random.seed()
-    await send_song(m, song["name"], msg)
+    query = parts[1].strip()
+    msg = await m.reply(f"🎤 **Finding artists similar to:** `{query}`...")
+    results = search_jiosaavn_multiple(f"artists like {query} similar", 8)
+    if not results:
+        await msg.edit("❌ No results found!")
+        return
+    artists = list(dict.fromkeys([s["primaryArtists"].split(",")[0].strip() for s in results]))
+    artists = [a for a in artists if a.lower() != query.lower()][:6]
+    text = f"🎤 **Artists Similar to {query}:**\n\n"
+    for i, a in enumerate(artists, 1):
+        text += f"{i}. **{a}**\n"
+    text += f"\n🎵 Use `/artist [name]` to see their songs!"
+    await msg.edit(text)
+
+@app.on_message(filters.command("skip"))
+async def skip(_, m: Message):
+    chat_id = m.chat.id
+    if chat_id not in active_quiz:
+        await m.reply("❌ No active quiz!")
+        return
+    quiz = active_quiz.pop(chat_id)
+    await m.reply(f"⏭ **Skipped!**\nAnswer: **{quiz['title']}** by {quiz['artist']}")
+
+@app.on_message(filters.command("start"))
+async def start(_, m: Message):
+    user_id = m.from_user.id
+    if user_id not in join_dates:
+        join_dates[user_id] = datetime.datetime.now().strftime("%d %b %Y")
+    await m.reply(
+        f"🎵 **Welcome to Music Bot!**\n"
+        f"Hello {m.from_user.first_name}! 👋\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "🎵 **Download & Search**\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "📥 `/download [song]` — Download song\n"
+        "🎧 `/quality [song]` — Choose quality\n"
+        "🎵 `/preview [song]` — 30 sec preview\n"
+        "🔍 `/search [song]` — Search top 5\n"
+        "ℹ️ `/info [song]` — Song details\n"
+        "📝 `/lyrics [song - artist]` — Full lyrics\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "🌍 **Browse & Discover**\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "🤖 `/ai_playlist [activity]` — AI playlist\n"
+        "💿 `/album [name]` — Album songs\n"
+        "🎤 `/artist [name]` — Artist songs\n"
+        "🎂 `/birthday [name]` — Birthday songs\n"
+        "🔗 `/chain [song]` — Song chain game\n"
+        "📅 `/daily` — Today's song\n"
+        "🌐 `/english` — Top English songs\n"
+        "🔤 `/findlyrics [line]` — Find by lyrics\n"
+        "🎸 `/genre [type]` — Genre songs\n"
+        "🇮🇳 `/hindi` — Top Hindi songs\n"
+        "🎼 `/karaoke [song]` — Instrumental\n"
+        "🔤 `/letter [A-Z]` — Songs by letter\n"
+        "🎭 `/mood [type]` — Mood songs\n"
+        "🌙 `/night` — Late night songs\n"
+        "🎵 `/playlist [mood]` — Download playlist\n"
+        "🎵 `/punjabi` — Top Punjabi songs\n"
+        "🎲 `/random` — Random song\n"
+        "🎯 `/recommend` — For you\n"
+        "🌍 `/regional [lang]` — Regional songs\n"
+        "⏱ `/short` — Under 3 mins\n"
+        "🎵 `/similar [song]` — Similar songs\n"
+        "🎤 `/similarartist [name]` — Similar artists\n"
+        "🏆 `/topartist [name]` — Artist top songs\n"
+        "🎬 `/topbollywood` — Top Bollywood\n"
+        "🇮🇳 `/topindia` — Top India\n"
+        "🔥 `/top2025` — Top 2025\n"
+        "🌍 `/trending` — Trending now\n"
+        "🎭 `/vibe [song]` — Vibe analysis\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "🎮 **Games & Fun**\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "⚖️ `/compare [s1] | [s2]` — Compare songs\n"
+        "🎯 `/guesssong` — Guess the song\n"
+        "🎮 `/musicquiz` — Music quiz\n"
+        "💬 `/quote` — Music quote\n"
+        "⭐ `/rate [song]` — Rate a song\n"
+        "🏆 `/topsongs` — Top rated songs\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "👤 **My Account**\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "📦 `/batch` — Download multiple songs\n"
+        "💾 `/favorites` — My favorites\n"
+        "📜 `/history` — Recent songs\n"
+        "🎵 `/lastdownload` — Last downloaded\n"
+        "🏆 `/leaderboard` — Top users\n"
+        "👤 `/mystats` — My stats\n"
+        "👤 `/profile` — My profile\n"
+        "🗑 `/removefav [song]` — Remove favorite\n"
+        "⭐ `/save [song]` — Save to favorites\n"
+        "📊 `/stats` — Bot stats\n"
+        "🔔 `/subscribe` — Get daily song\n"
+        "🔕 `/unsubscribe` — Stop daily song\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "🔜 **Coming Soon:** 🎙 `/play` Voice Chat\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "⚠️ **Found a bug or need help?**\n"
+        "📩 Contact the developer: @ZeroShader"
+    )
+
+@app.on_message(filters.command("stats"))
+async def bot_stats(_, m: Message):
+    await m.reply(
+        f"📊 **Bot Statistics:**\n\n"
+        f"👥 Users: {len(stats['users'])}\n"
+        f"📥 Total Downloads: {stats['total_downloads']}\n"
+        f"⭐ Rated Songs: {len(song_ratings)}\n"
+        f"🔔 Subscribers: {len(subscribers)}\n"
+        f"🎵 Database: JioSaavn\n\n"
+        f"🔜 Voice Chat: Coming Soon!\n\n"
+        f"⚠️ Issues? Contact: @ZeroShader"
+    )
+
+@app.on_message(filters.command("subscribe"))
+async def subscribe(_, m: Message):
+    user_id = m.from_user.id
+    if user_id in subscribers:
+        await m.reply("🔔 Already subscribed!\nUse `/unsubscribe` to stop.")
+        return
+    subscribers.add(user_id)
+    await m.reply("🔔 **Subscribed!**\n\nYou'll receive a daily song every morning at 9 AM!\nUse `/unsubscribe` to stop anytime.")
+
+# T
+
+@app.on_message(filters.command("topartist"))
+async def topartist(_, m: Message):
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
+        await m.reply("❌ Example: `/topartist Arijit Singh`")
+        return
+    query = parts[1].strip()
+    msg = await m.reply(f"🏆 **Fetching top by:** `{query}`...")
+    results = search_jiosaavn_multiple(f"best of {query}", 8)
+    if not results:
+        await msg.edit("❌ No results!")
+        return
+    text = f"🏆 **Top Songs by {query}:**\n\n"
+    for i, s in enumerate(results, 1):
+        d = int(s["duration"])
+        text += f"{i}. **{s['name']}** | ⏱ {d//60}:{d%60:02d}\n"
+    text += "\n📥 `/download [song name]`"
+    await msg.edit(text)
+
+@app.on_message(filters.command("topbollywood"))
+async def topbollywood(_, m: Message):
+    msg = await m.reply("🎬 **Fetching Top Bollywood...**")
+    results = search_jiosaavn_multiple("top bollywood hits 2024", 5)
+    results += search_jiosaavn_multiple("best bollywood songs popular", 5)
+    seen = set()
+    unique = []
+    for s in results:
+        if s["name"] not in seen:
+            seen.add(s["name"])
+            unique.append(s)
+    text = "🎬 **Top Bollywood Songs:**\n\n"
+    for i, s in enumerate(unique[:10], 1):
+        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
+    text += "\n📥 `/download [song name]`"
+    await msg.edit(text)
+
+@app.on_message(filters.command("topindia"))
+async def topindia(_, m: Message):
+    msg = await m.reply("🇮🇳 **Fetching Top India...**")
+    results = search_jiosaavn_multiple("hindi hits popular 2024", 5)
+    results += search_jiosaavn_multiple("trending bollywood 2024", 5)
+    seen = set()
+    unique = []
+    for s in results:
+        if s["name"] not in seen:
+            seen.add(s["name"])
+            unique.append(s)
+    text = "🇮🇳 **Top Songs in India:**\n\n"
+    for i, s in enumerate(unique[:10], 1):
+        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
+    text += "\n📥 `/download [song name]`"
+    await msg.edit(text)
+
+@app.on_message(filters.command("topsongs"))
+async def topsongs(_, m: Message):
+    if not song_ratings:
+        await m.reply("❌ No rated songs yet!\nUse `/rate [song]` to rate.")
+        return
+    sorted_s = sorted(song_ratings.items(), key=lambda x: sum(x[1].values())/len(x[1]), reverse=True)
+    text = "🏆 **Top Rated Songs:**\n\n"
+    for i, (song, ratings) in enumerate(sorted_s[:10], 1):
+        avg = sum(ratings.values()) / len(ratings)
+        text += f"{i}. **{song}**\n   ⭐ {avg:.1f}/5 ({len(ratings)} votes)\n\n"
+    await m.reply(text)
+
+@app.on_message(filters.command("top2025"))
+async def top2025(_, m: Message):
+    msg = await m.reply("🔥 **Fetching Top 2025...**")
+    results = search_jiosaavn_multiple("top hits 2025 new songs", 5)
+    results += search_jiosaavn_multiple("new 2025 bollywood songs", 5)
+    seen = set()
+    unique = []
+    for s in results:
+        if s["name"] not in seen:
+            seen.add(s["name"])
+            unique.append(s)
+    text = "🔥 **Top Songs of 2025:**\n\n"
+    for i, s in enumerate(unique[:10], 1):
+        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
+    text += "\n📥 `/download [song name]`"
+    await msg.edit(text)
 
 @app.on_message(filters.command("trending"))
 async def trending(_, m: Message):
     msg = await m.reply("🌍 **Fetching trending...**")
-    results = search_jiosaavn_multiple("trending india 2024 top hits", 10)
-    if not results:
-        results = search_jiosaavn_multiple("bollywood top hits", 10)
-    if not results:
+    results = search_jiosaavn_multiple("trending india 2024 top hits", 5)
+    results += search_jiosaavn_multiple("viral hindi songs 2024", 5)
+    seen = set()
+    unique = []
+    for s in results:
+        if s["name"] not in seen:
+            seen.add(s["name"])
+            unique.append(s)
+    if not unique:
         await msg.edit("❌ Could not fetch!")
         return
     text = "🌍 **Trending Right Now:**\n\n"
-    for i, s in enumerate(results, 1):
+    for i, s in enumerate(unique[:10], 1):
         text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
     text += "\n📥 `/download [song name]`"
     await msg.edit(text)
 
-@app.on_message(filters.command("recommend"))
-async def recommend(_, m: Message):
+# U
+
+@app.on_message(filters.command("unsubscribe"))
+async def unsubscribe(_, m: Message):
     user_id = m.from_user.id
-    msg = await m.reply("🎯 **Finding recommendations...**")
-    if user_id in history and history[user_id]:
-        last = history[user_id][0]
-        results = search_jiosaavn_multiple(f"songs like {last}", 5)
-        text = "🎯 **Based on Your History:**\n\n"
-    else:
-        results = search_jiosaavn_multiple("best hindi songs popular", 5)
-        text = "🎯 **Recommended for You:**\n\n"
-    if not results:
-        await msg.edit("❌ Could not fetch!")
+    if user_id not in subscribers:
+        await m.reply("❌ Not subscribed!\nUse `/subscribe` to start.")
         return
-    for i, s in enumerate(results, 1):
-        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
-    text += "\n📥 `/download [song name]`"
-    await msg.edit(text)
+    subscribers.discard(user_id)
+    await m.reply("🔕 **Unsubscribed!**\nYou won't receive daily songs anymore.")
 
-@app.on_message(filters.command("short"))
-async def short(_, m: Message):
-    msg = await m.reply("⏱ **Fetching short songs...**")
-    results = search_jiosaavn_multiple("short songs 2 minutes", 15)
-    text = "⏱ **Short Songs (Under 3 Mins):**\n\n"
-    count = 0
-    for s in results:
-        d = int(s["duration"])
-        if d <= 180:
-            count += 1
-            text += f"{count}. **{s['name']}** - {s['primaryArtists']} | ⏱ {d//60}:{d%60:02d}\n"
-    if count == 0:
-        await msg.edit("❌ No short songs found!")
-        return
-    text += "\n📥 `/download [song name]`"
-    await msg.edit(text)
-
-@app.on_message(filters.command("night"))
-async def night(_, m: Message):
-    msg = await m.reply("🌙 **Fetching late night songs...**")
-    results = search_jiosaavn_multiple("late night chill sad songs hindi", 10)
-    if not results:
-        await msg.edit("❌ No songs found!")
-        return
-    await send_song(m, random.choice(results)["name"], msg)
-
-@app.on_message(filters.command("birthday"))
-async def birthday(_, m: Message):
-    parts = m.text.split(None, 1)
-    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
-        await m.reply("❌ Name likho!\nExample: `/birthday Rahul`")
-        return
-    name = parts[1].strip()
-    msg = await m.reply("🎂 **Fetching birthday songs...**")
-    results = search_jiosaavn_multiple("birthday songs hindi english", 7)
-    text = f"🎂 **Happy Birthday {name}!** 🎉\n\n🎵 **Songs:**\n\n"
-    for i, s in enumerate(results, 1):
-        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
-    text += f"\n🎊 Wishing **{name}** a wonderful birthday! 🎈🥳"
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🎵 Download Birthday Song", callback_data="dl_birthday")]])
-    await msg.edit(text, reply_markup=keyboard)
-
-@app.on_message(filters.command("playlist"))
-async def playlist(_, m: Message):
-    parts = m.text.split(None, 1)
-    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
-        await m.reply("❌ Example: `/playlist happy`\nAvailable: `happy` `sad` `party` `romantic` `workout` `chill`")
-        return
-    mood_type = parts[1].strip().lower()
-    queries = {"happy": "happy upbeat bollywood", "sad": "sad emotional hindi", "party": "party dance hindi", "romantic": "romantic love hindi", "workout": "workout gym motivation", "chill": "chill relaxing hindi"}
-    emojis = {"happy": "😊", "sad": "😢", "party": "🎉", "romantic": "💕", "workout": "💪", "chill": "😌"}
-    if mood_type not in queries:
-        await m.reply("❌ Available: `happy` `sad` `party` `romantic` `workout` `chill`")
-        return
-    results = search_jiosaavn_multiple(queries[mood_type], 5)
-    await m.reply(f"🎵 **{mood_type.capitalize()} Playlist** {emojis[mood_type]}\nDownloading {len(results)} songs...\n⚠️ Few minutes!")
-    for s in results:
-        try:
-            msg = await m.reply(f"⬇️ `{s['name']}`...")
-            await send_song(m, s["name"], msg)
-            await asyncio.sleep(2)
-        except:
-            pass
-
-@app.on_message(filters.command("regional"))
-async def regional(_, m: Message):
-    parts = m.text.split(None, 1)
-    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
-        await m.reply("🌍 **Choose:**\n`/regional marathi`\n`/regional tamil`\n`/regional telugu`\n`/regional bhojpuri`\n`/regional bengali`\n`/regional gujarati`\n`/regional kannada`\n`/regional malayalam`")
-        return
-    lang = parts[1].strip().lower()
-    msg = await m.reply(f"🌍 **Fetching {lang} songs...**")
-    results = search_jiosaavn_multiple(f"top {lang} songs popular", 8)
-    if not results:
-        await msg.edit("❌ No songs found!")
-        return
-    text = f"🌍 **Top {lang.capitalize()} Songs:**\n\n"
-    for i, s in enumerate(results, 1):
-        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
-    text += "\n📥 `/download [song name]`"
-    await msg.edit(text)
+# V
 
 @app.on_message(filters.command("vibe"))
 async def vibe(_, m: Message):
@@ -964,109 +1466,7 @@ async def vibe(_, m: Message):
         f"**Vibe:** {vibe_r}\n📝 {desc}"
     )
 
-@app.on_message(filters.command("ai_playlist"))
-async def ai_playlist(_, m: Message):
-    parts = m.text.split(None, 1)
-    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
-        await m.reply("🤖 **Choose:**\n`/ai_playlist gym` 💪\n`/ai_playlist study` 📚\n`/ai_playlist heartbreak` 💔\n`/ai_playlist sleep` 😴\n`/ai_playlist party` 🎉\n`/ai_playlist romantic` 💕\n`/ai_playlist morning` 🌅\n`/ai_playlist roadtrip` 🚗")
-        return
-    activity = parts[1].strip().lower()
-    queries = {"gym": "workout gym motivation", "study": "study focus calm instrumental", "heartbreak": "heartbreak sad emotional hindi", "sleep": "sleep relaxing calm", "party": "party dance upbeat hindi", "romantic": "romantic love songs", "morning": "morning fresh motivational", "roadtrip": "roadtrip travel songs"}
-    emojis = {"gym": "💪", "study": "📚", "heartbreak": "💔", "sleep": "😴", "party": "🎉", "romantic": "💕", "morning": "🌅", "roadtrip": "🚗"}
-    if activity not in queries:
-        await m.reply("❌ Available: `gym` `study` `heartbreak` `sleep` `party` `romantic` `morning` `roadtrip`")
-        return
-    msg = await m.reply(f"🤖 **Creating AI Playlist: {activity}...**")
-    results = search_jiosaavn_multiple(queries[activity], 8)
-    if not results:
-        await msg.edit("❌ No songs found!")
-        return
-    text = f"🤖 **AI Playlist: {activity.capitalize()}** {emojis[activity]}\n\n"
-    for i, s in enumerate(results, 1):
-        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
-    text += "\n📥 `/download [song name]`"
-    await msg.edit(text)
-
-@app.on_message(filters.command("quote"))
-async def quote(_, m: Message):
-    msg = await m.reply("💬 **Fetching quote...**")
-    await msg.edit(f"💬 **Music Quote:**\n\n{fetch_quote()}")
-
-@app.on_message(filters.command("guesssong"))
-async def guesssong(_, m: Message):
-    msg = await m.reply("🎯 **Fetching quiz song...**")
-    chat_id = m.chat.id
-    results = search_jiosaavn_multiple("popular hindi songs", 15)
-    if not results:
-        await msg.edit("❌ Could not fetch!")
-        return
-    song = random.choice(results)
-    title = song["name"]
-    artist = song["primaryArtists"]
-    lyrics_text, _ = get_lyrics(f"{title} - {artist}")
-    if lyrics_text:
-        lines = [l.strip() for l in lyrics_text.split("\n") if len(l.strip()) > 20]
-        line = random.choice(lines[:10]) if lines else f"Hint: Artist is **{artist}**"
-    else:
-        line = f"Hint: Artist is **{artist}**"
-    active_quiz[chat_id] = {"answer": title.lower(), "title": title, "artist": artist, "type": "guess"}
-    await msg.edit(
-        f"🎯 **Guess The Song!**\n\n"
-        f"🎵 **Lyrics:**\n_{line}_\n\n"
-        f"💭 Reply with song name!\n⏱ 30 seconds!\n\n"
-        f"Use `/skip` to skip."
-    )
-    await asyncio.sleep(30)
-    if chat_id in active_quiz and active_quiz[chat_id].get("type") == "guess":
-        del active_quiz[chat_id]
-        await m.reply(f"⏱ **Time's up!**\nAnswer: **{title}** by {artist}")
-
-@app.on_message(filters.command("musicquiz"))
-async def musicquiz(_, m: Message):
-    msg = await m.reply("🎮 **Preparing Music Quiz...**")
-    chat_id = m.chat.id
-    results = search_jiosaavn_multiple("popular bollywood songs", 20)
-    if not results:
-        await msg.edit("❌ Could not fetch!")
-        return
-    correct_song = random.choice(results)
-    correct_title = correct_song["name"]
-    correct_artist = correct_song["primaryArtists"]
-    wrong_songs = [s for s in results if s["name"] != correct_title]
-    wrong_options = random.sample(wrong_songs, min(3, len(wrong_songs)))
-    options = [correct_title] + [s["name"] for s in wrong_options]
-    random.shuffle(options)
-    correct_idx = options.index(correct_title)
-    option_labels = ["A", "B", "C", "D"]
-    active_quiz[chat_id] = {
-        "answer": correct_title.lower(),
-        "title": correct_title,
-        "artist": correct_artist,
-        "type": "quiz",
-        "options": options
-    }
-    text = (
-        f"🎮 **Music Quiz!**\n\n"
-        f"👤 **Artist:** {correct_artist}\n\n"
-        f"❓ **Which song is by this artist?**\n\n"
-    )
-    for i, opt in enumerate(options):
-        text += f"**{option_labels[i]}.** {opt}\n"
-    text += "\n💭 Reply with A, B, C or D!\n⏱ 20 seconds!"
-    await msg.edit(text)
-    await asyncio.sleep(20)
-    if chat_id in active_quiz and active_quiz[chat_id].get("type") == "quiz":
-        del active_quiz[chat_id]
-        await m.reply(f"⏱ **Time's up!**\nAnswer: **{option_labels[correct_idx]}. {correct_title}** by {correct_artist}")
-
-@app.on_message(filters.command("skip"))
-async def skip(_, m: Message):
-    chat_id = m.chat.id
-    if chat_id not in active_quiz:
-        await m.reply("❌ No active quiz!")
-        return
-    quiz = active_quiz.pop(chat_id)
-    await m.reply(f"⏭ **Skipped!**\nAnswer: **{quiz['title']}** by {quiz['artist']}")
+# ========== QUIZ CHECK (always last) ==========
 
 @app.on_message(filters.text & ~filters.regex(r"^/"))
 async def quiz_check(_, m: Message):
@@ -1085,306 +1485,13 @@ async def quiz_check(_, m: Message):
                 del active_quiz[chat_id]
                 await m.reply(f"✅ **Correct! {m.from_user.first_name}!** 🎉\n🎵 **{quiz['title']}** by {quiz['artist']}\n\n📥 `/download {quiz['title']}`")
             else:
-                await m.reply(f"❌ **Wrong!** Try again!\n💡 Hint: It starts with **{quiz['title'][0]}**")
+                await m.reply(f"❌ **Wrong!** Try again!\n💡 Hint: Starts with **{quiz['title'][0]}**")
     else:
         if any(w in user_ans for w in correct.split() if len(w) > 3):
             del active_quiz[chat_id]
             await m.reply(f"✅ **Correct! {m.from_user.first_name}!** 🎉\n🎵 **{quiz['title']}** by {quiz['artist']}\n\n📥 `/download {quiz['title']}`")
 
-@app.on_message(filters.command("rate"))
-async def rate(_, m: Message):
-    parts = m.text.split(None, 1)
-    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
-        await m.reply("❌ Example: `/rate Tum Hi Ho`")
-        return
-    song = parts[1].strip()
-    keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton("1⭐", callback_data=f"rate_1_{song[:25]}"),
-        InlineKeyboardButton("2⭐", callback_data=f"rate_2_{song[:25]}"),
-        InlineKeyboardButton("3⭐", callback_data=f"rate_3_{song[:25]}"),
-        InlineKeyboardButton("4⭐", callback_data=f"rate_4_{song[:25]}"),
-        InlineKeyboardButton("5⭐", callback_data=f"rate_5_{song[:25]}"),
-    ]])
-    await m.reply(f"⭐ **Rate:** `{song}`", reply_markup=keyboard)
-
-@app.on_message(filters.command("topsongs"))
-async def topsongs(_, m: Message):
-    if not song_ratings:
-        await m.reply("❌ No rated songs yet!\nUse `/rate [song]`")
-        return
-    sorted_s = sorted(song_ratings.items(), key=lambda x: sum(x[1].values())/len(x[1]), reverse=True)
-    text = "🏆 **Top Rated Songs:**\n\n"
-    for i, (song, ratings) in enumerate(sorted_s[:10], 1):
-        avg = sum(ratings.values()) / len(ratings)
-        text += f"{i}. **{song}**\n   ⭐ {avg:.1f}/5 ({len(ratings)} votes)\n\n"
-    await m.reply(text)
-
-@app.on_message(filters.command("compare"))
-async def compare(_, m: Message):
-    parts = m.text.split(None, 1)
-    if len(parts) < 2 or "|" not in parts[1]:
-        await m.reply("❌ Example: `/compare Tum Hi Ho | Kesariya`")
-        return
-    songs = parts[1].split("|")
-    if len(songs) != 2:
-        await m.reply("❌ Example: `/compare Tum Hi Ho | Kesariya`")
-        return
-    s1, s2 = songs[0].strip(), songs[1].strip()
-    msg = await m.reply("⚖️ **Comparing...**")
-    _, t1, d1, data1 = search_jiosaavn(s1)
-    _, t2, d2, data2 = search_jiosaavn(s2)
-    if not data1 or not data2:
-        await msg.edit("❌ One or both songs not found!")
-        return
-    await msg.edit(
-        f"⚖️ **Song Comparison:**\n\n"
-        f"**1️⃣ {data1['name']}**\n"
-        f"👤 {data1['primaryArtists']}\n"
-        f"💿 {data1.get('album',{}).get('name','Unknown')}\n"
-        f"⏱ {d1//60}:{d1%60:02d} | 📅 {data1.get('year','?')}\n\n"
-        f"**VS**\n\n"
-        f"**2️⃣ {data2['name']}**\n"
-        f"👤 {data2['primaryArtists']}\n"
-        f"💿 {data2.get('album',{}).get('name','Unknown')}\n"
-        f"⏱ {d2//60}:{d2%60:02d} | 📅 {data2.get('year','?')}\n\n"
-        f"📥 `/download {data1['name']}` or `/download {data2['name']}`"
-    )
-
-@app.on_message(filters.command("batch"))
-async def batch(_, m: Message):
-    parts = m.text.split(None, 1)
-    if len(parts) < 2 or not parts[1].strip():
-        await m.reply("📦 **Batch Download!**\n\nSong list ke saath likho:\n\n```\n/batch Tum Hi Ho\nKesariya\nBlinding Lights```\n\n⚠️ Max 5 songs!")
-        return
-    songs = [s.strip() for s in parts[1].strip().split("\n") if s.strip()][:5]
-    if not songs:
-        await m.reply("❌ Song names likho!")
-        return
-    await m.reply(f"📦 **Downloading {len(songs)} songs...**\n⚠️ Wait karo!")
-    for i, song in enumerate(songs, 1):
-        try:
-            msg = await m.reply(f"⬇️ **{i}/{len(songs)}:** `{song}`...")
-            await send_song(m, song, msg)
-            await asyncio.sleep(2)
-        except Exception as e:
-            await m.reply(f"❌ **{song}** failed!")
-
-@app.on_message(filters.command("findlyrics"))
-async def findlyrics(_, m: Message):
-    parts = m.text.split(None, 1)
-    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
-        await m.reply("❌ Example: `/findlyrics tere bin nahi lagda`")
-        return
-    query = parts[1].strip()
-    msg = await m.reply(f"🔤 **Searching by lyrics:** `{query}`...")
-    try:
-        r = requests.get(f"https://lrclib.net/api/search?q={query}", headers={"User-Agent": "MusicBot/1.0"}, timeout=15)
-        data = r.json()
-        if data:
-            text = f"🔤 **Songs matching:** `{query}`\n\n"
-            for i, item in enumerate(data[:5], 1):
-                text += f"{i}. **{item.get('trackName','Unknown')}** - {item.get('artistName','Unknown')}\n"
-            text += "\n📥 `/download [song name]`"
-            await msg.edit(text)
-        else:
-            results = search_jiosaavn_multiple(query, 5)
-            text = f"🔤 **Possible songs:**\n\n"
-            for i, s in enumerate(results, 1):
-                text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
-            await msg.edit(text)
-    except Exception as e:
-        await msg.edit(f"❌ Error: `{str(e)}`")
-
-@app.on_message(filters.command("topindia"))
-async def topindia(_, m: Message):
-    msg = await m.reply("🇮🇳 **Fetching Top India...**")
-    results = search_jiosaavn_multiple("top india trending songs 2024", 10)
-    text = "🇮🇳 **Top Songs in India:**\n\n"
-    for i, s in enumerate(results, 1):
-        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
-    text += "\n📥 `/download [song name]`"
-    await msg.edit(text)
-
-@app.on_message(filters.command("topbollywood"))
-async def topbollywood(_, m: Message):
-    msg = await m.reply("🎬 **Fetching Top Bollywood...**")
-    results = search_jiosaavn_multiple("top bollywood hits 2024", 10)
-    text = "🎬 **Top Bollywood Songs:**\n\n"
-    for i, s in enumerate(results, 1):
-        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
-    text += "\n📥 `/download [song name]`"
-    await msg.edit(text)
-
-@app.on_message(filters.command("top2025"))
-async def top2025(_, m: Message):
-    msg = await m.reply("🔥 **Fetching Top 2025...**")
-    results = search_jiosaavn_multiple("top hits 2025 new songs", 10)
-    text = "🔥 **Top Songs of 2025:**\n\n"
-    for i, s in enumerate(results, 1):
-        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
-    text += "\n📥 `/download [song name]`"
-    await msg.edit(text)
-
-@app.on_message(filters.command("profile"))
-async def profile(_, m: Message):
-    user_id = m.from_user.id
-    name = m.from_user.first_name
-    joined = join_dates.get(user_id, "Unknown")
-    downloads = user_stats.get(user_id, {}).get("downloads", 0)
-    songs = user_stats.get(user_id, {}).get("songs", [])
-    most = max(set(songs), key=songs.count) if songs else "None"
-    fav_count = len(favorites.get(user_id, []))
-    hist_count = len(history.get(user_id, []))
-    genre = get_user_genre(user_id)
-    rated = sum(1 for r in song_ratings.values() if user_id in r)
-    await m.reply(
-        f"👤 **{name}'s Music Profile**\n\n"
-        f"📅 Member Since: {joined}\n"
-        f"📥 Total Downloads: {downloads}\n"
-        f"🎵 Most Downloaded: {most}\n"
-        f"🎸 Fav Genre: {genre}\n"
-        f"⭐ Favorites: {fav_count}\n"
-        f"📜 History: {hist_count}\n"
-        f"⭐ Songs Rated: {rated}\n"
-        f"🔔 Subscribed: {'Yes ✅' if user_id in subscribers else 'No ❌'}\n\n"
-        f"🏅 **Level:** {'🥉 Beginner' if downloads < 10 else '🥈 Music Lover' if downloads < 50 else '🥇 Music Master' if downloads < 100 else '💎 Legend'}"
-    )
-
-@app.on_message(filters.command("leaderboard"))
-async def leaderboard(_, m: Message):
-    if not user_stats:
-        await m.reply("❌ No data yet!")
-        return
-    sorted_users = sorted(user_stats.items(), key=lambda x: x[1]["downloads"], reverse=True)
-    text = "🏆 **Top Music Lovers:**\n\n"
-    medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
-    for i, (uid, data) in enumerate(sorted_users[:10], 0):
-        name = data["songs"][-1].split(" - ")[-1] if data["songs"] else "User"
-        text += f"{medals[i]} **User {i+1}** - {data['downloads']} downloads\n"
-    text += "\n📥 Download more to climb up! 🚀"
-    await m.reply(text)
-
-@app.on_message(filters.command("subscribe"))
-async def subscribe(_, m: Message):
-    user_id = m.from_user.id
-    if user_id in subscribers:
-        await m.reply("🔔 Already subscribed!\nUse `/unsubscribe` to stop.")
-        return
-    subscribers.add(user_id)
-    await m.reply(
-        "🔔 **Subscribed!**\n\n"
-        "You'll receive a daily song recommendation!\n"
-        "Use `/unsubscribe` to stop anytime."
-    )
-
-@app.on_message(filters.command("unsubscribe"))
-async def unsubscribe(_, m: Message):
-    user_id = m.from_user.id
-    if user_id not in subscribers:
-        await m.reply("❌ Not subscribed!\nUse `/subscribe` to start.")
-        return
-    subscribers.discard(user_id)
-    await m.reply("🔕 **Unsubscribed!**\nYou won't receive daily songs anymore.")
-
-@app.on_message(filters.command("save"))
-async def save(_, m: Message):
-    parts = m.text.split(None, 1)
-    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
-        await m.reply("❌ Example: `/save Tum Hi Ho`")
-        return
-    query = parts[1].strip()
-    user_id = m.from_user.id
-    if user_id not in favorites:
-        favorites[user_id] = []
-    if query in favorites[user_id]:
-        await m.reply("⭐ Already in favorites!")
-        return
-    if len(favorites[user_id]) >= 20:
-        await m.reply("❌ Favorites full! Max 20.")
-        return
-    favorites[user_id].append(query)
-    await m.reply(f"⭐ **Saved:** `{query}`")
-
-@app.on_message(filters.command("favorites"))
-async def show_favorites(_, m: Message):
-    user_id = m.from_user.id
-    if user_id not in favorites or not favorites[user_id]:
-        await m.reply("💾 No favorites!\nUse `/save [song]`")
-        return
-    text = "⭐ **Your Favorites:**\n\n"
-    for i, s in enumerate(favorites[user_id], 1):
-        text += f"{i}. {s}\n"
-    text += "\n📥 `/download [song name]`"
-    await m.reply(text)
-
-@app.on_message(filters.command("removefav"))
-async def removefav(_, m: Message):
-    parts = m.text.split(None, 1)
-    if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
-        await m.reply("❌ Example: `/removefav Tum Hi Ho`")
-        return
-    query = parts[1].strip()
-    user_id = m.from_user.id
-    if user_id not in favorites or query not in favorites[user_id]:
-        await m.reply("❌ Not in favorites!")
-        return
-    favorites[user_id].remove(query)
-    await m.reply(f"🗑 **Removed:** `{query}`")
-
-@app.on_message(filters.command("history"))
-async def show_history(_, m: Message):
-    user_id = m.from_user.id
-    if user_id not in history or not history[user_id]:
-        await m.reply("📜 No history yet!")
-        return
-    text = "📜 **Recent Songs:**\n\n"
-    for i, s in enumerate(history[user_id], 1):
-        text += f"{i}. {s}\n"
-    await m.reply(text)
-
-@app.on_message(filters.command("stats"))
-async def bot_stats(_, m: Message):
-    await m.reply(
-        f"📊 **Bot Statistics:**\n\n"
-        f"👥 Users: {len(stats['users'])}\n"
-        f"📥 Downloads: {stats['total_downloads']}\n"
-        f"⭐ Rated Songs: {len(song_ratings)}\n"
-        f"🔔 Subscribers: {len(subscribers)}\n"
-        f"🎵 Database: JioSaavn\n\n"
-        f"🔜 Voice Chat: Coming Soon!"
-    )
-
-@app.on_message(filters.command("mystats"))
-async def mystats(_, m: Message):
-    user_id = m.from_user.id
-    if user_id not in user_stats or user_stats[user_id]["downloads"] == 0:
-        await m.reply(f"👤 **{m.from_user.first_name}'s Stats:**\n\n📥 Downloads: 0\n\nStart downloading! 🎵")
-        return
-    total = user_stats[user_id]["downloads"]
-    songs = user_stats[user_id]["songs"]
-    most = max(set(songs), key=songs.count) if songs else "None"
-    await m.reply(
-        f"👤 **{m.from_user.first_name}'s Stats:**\n\n"
-        f"📥 Downloads: {total}\n"
-        f"🎵 Most Downloaded: {most}\n"
-        f"📜 History: {len(history.get(user_id, []))}\n"
-        f"⭐ Favorites: {len(favorites.get(user_id, []))}\n"
-        f"🎸 Fav Genre: {get_user_genre(user_id)}"
-    )
-
-@app.on_message(filters.command("lastdownload"))
-async def lastdownload(_, m: Message):
-    user_id = m.from_user.id
-    if user_id not in last_downloaded:
-        await m.reply("🎵 No song downloaded yet!")
-        return
-    s = last_downloaded[user_id]
-    await m.reply(
-        f"🎵 **Last Downloaded:**\n\n"
-        f"🎶 **{s['title']}**\n"
-        f"⏱ {s['duration']} | 👤 {s['by']}\n\n"
-        f"📥 `/download {s['title']}`"
-    )
+# ========== DAILY SONG TASK ==========
 
 async def send_daily_songs():
     while True:
@@ -1396,8 +1503,8 @@ async def send_daily_songs():
                     song = random.choice(results)
                     for user_id in subscribers:
                         try:
-                            msg_text = await app.send_message(user_id, f"🔔 **Good Morning! Daily Song:**\n\n🎵 `{song['name']}`\n\n⬇️ Downloading...")
-                            await send_song(msg_text, song["name"], msg_text)
+                            msg_obj = await app.send_message(user_id, f"🔔 **Good Morning! Daily Song:**\n\n🎵 `{song['name']}`\n\n⬇️ Downloading...")
+                            await send_song(msg_obj, song["name"], msg_obj)
                         except:
                             pass
         await asyncio.sleep(60)
