@@ -238,6 +238,8 @@ async def send_song(m, query, msg, quality="320"):
         await msg.edit("📤 **Sending...**")
     except: pass
 
+    is_group = m.chat.type.name in ("GROUP", "SUPERGROUP")
+
     try:
         await app.send_audio(
             m.chat.id, path,
@@ -249,7 +251,36 @@ async def send_song(m, query, msg, quality="320"):
             title=title, duration=duration, reply_markup=reaction_keyboard
         )
     except Exception as e:
-        await msg.edit(f"❌ Upload failed: `{str(e)[:50]}`")
+        err_str = str(e)
+        if "CHAT_SEND_AUDIO" in err_str or "403" in err_str or "Forbidden" in err_str:
+            # Group mein audio permission nahi — PM mein bhejo
+            try:
+                await app.send_audio(
+                    m.from_user.id, path,
+                    caption=(f"🎵 **{title}**\n"
+                             f"💿 {album} | 📅 {year}\n"
+                             f"⏱ {mins}:{secs:02d} | 🎧 {quality}kbps\n"
+                             f"🤖 {BOT_NAME} | {BOT_USERNAME}"),
+                    title=title, duration=duration, reply_markup=reaction_keyboard
+                )
+                try:
+                    await msg.edit(
+                        f"✅ **{title}**\n"
+                        f"📩 Audio permission nahi hai yahan!\n"
+                        f"Song aapke PM mein bheja gaya! 👆"
+                    )
+                except: pass
+            except Exception as e2:
+                await msg.edit(
+                    f"⚠️ **Group mein audio send nahi ho sakta!**\n\n"
+                    f"**Fix karo:**\n"
+                    f"1. Bot ko **Admin** banao\n"
+                    f"2. Ya **Media** permission do\n\n"
+                    f"🎵 Song: `{title}`\n"
+                    f"📩 Pehle mujhe PM karo: {BOT_USERNAME}"
+                )
+        else:
+            await msg.edit(f"❌ Error: `{err_str[:80]}`")
         try: os.remove(path)
         except: pass
         return
@@ -262,7 +293,6 @@ async def send_song(m, query, msg, quality="320"):
         except: pass
 
     # XP notification — sirf private chat mein, group mein spam nahi
-    is_group = m.chat.type.name in ("GROUP", "SUPERGROUP")
     user = db.get_user(user_id)
     streak_bonus = ""
     if user and user["streak"] == 3:
