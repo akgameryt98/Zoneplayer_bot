@@ -171,13 +171,20 @@ def download_song_file(url, title):
     os.makedirs("dl", exist_ok=True)
     safe = "".join(c for c in title if c.isalnum() or c in " -_")[:50]
     path = f"dl/{safe}.mp3"
-    r = requests.get(url, stream=True, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+    r = requests.get(url, stream=True, timeout=60, headers={
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "*/*",
+        "Range": "bytes=0-",
+    })
+    r.raise_for_status()
     with open(path, "wb") as f:
-        for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
+        for chunk in r.iter_content(chunk_size=65536):
+            if chunk:
+                f.write(chunk)
     return path
 
 async def send_song(m, query, msg, quality="320"):
-    dl_url, title, duration, song_data = search_jiosaavn_quality(query, quality)
+    dl_url, title, duration, song_data = await asyncio.to_thread(search_jiosaavn_quality, query, quality)
     if not dl_url:
         await msg.edit("❌ Song not found! Try a different name.")
         return
@@ -191,8 +198,12 @@ async def send_song(m, query, msg, quality="320"):
         await msg.edit(f"⬇️ **Downloading:** `{title}`...")
     except: pass
 
-    # Step 2: Actually download the file
-    path = download_song_file(dl_url, title)
+    # Step 2: Actually download the file (non-blocking)
+    try:
+        path = await asyncio.to_thread(download_song_file, dl_url, title)
+    except Exception as e:
+        await msg.edit(f"❌ Download failed: `{str(e)[:60]}`")
+        return
 
     # Step 3: Update stats AFTER successful download
     update_today_stats()
