@@ -108,19 +108,37 @@ def get_user_genre_from_history(user_id):
     counts = {"Hindi 🇮🇳": hindi, "English 🌍": english, "Punjabi 🎵": punjabi}
     return max(counts, key=counts.get)
 
+def _normalize_song(s):
+    """Normalize song dict to consistent format"""
+    if not s: return None
+    return {
+        "name": s.get("name", "Unknown"),
+        "primaryArtists": s.get("artist", s.get("primaryArtists", "Unknown")),
+        "artist": s.get("artist", s.get("primaryArtists", "Unknown")),
+        "album": s.get("album", "Unknown"),  # always string now
+        "year": s.get("year", "Unknown"),
+        "duration": s.get("duration", 0),
+        "language": s.get("language", "Unknown"),
+        "download_url": s.get("download_url", ""),
+        "id": s.get("id", ""),
+        "source": s.get("source", ""),
+        "quality": s.get("quality", "320kbps"),
+    }
+
 def search_jiosaavn(query):
     """Legacy wrapper - uses apis.py"""
     results = apis.search_songs(query, 10)
     if not results: return None, None, None, None
-    s = results[0]
-    title = f"{s['name']} - {s['artist']}"
+    s = _normalize_song(results[0])
+    title = f"{s['name']} - {s['primaryArtists']}"
     return s.get("download_url"), title, s.get("duration", 0), s
 
 def search_jiosaavn_quality(query, quality="320"):
     """Legacy wrapper - uses apis.py"""
     s = apis.search_song_download(query, quality)
     if not s: return None, None, None, None
-    title = f"{s['name']} - {s['artist']}"
+    s = _normalize_song(s)
+    title = f"{s['name']} - {s['primaryArtists']}"
     return s.get("download_url"), title, s.get("duration", 0), s
 
 def search_jiosaavn_multiple(query, limit=8):
@@ -260,8 +278,13 @@ async def send_song(m, query, msg, quality="320"):
     if m.chat.type.name in ("GROUP", "SUPERGROUP"):
         db.update_group_stats(m.chat.id, user_id, m.from_user.first_name)
 
-    album = song_data.get("album", {}).get("name", "Unknown") if song_data else "Unknown"
-    year = song_data.get("year", "Unknown") if song_data else "Unknown"
+    if song_data:
+        album_raw = song_data.get("album", "Unknown")
+        album = album_raw.get("name", "Unknown") if isinstance(album_raw, dict) else (str(album_raw) if album_raw else "Unknown")
+        year = str(song_data.get("year", "Unknown") or "Unknown")
+    else:
+        album = "Unknown"
+        year = "Unknown"
 
     reaction_keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("📥 Download", callback_data=f"dl_{title[:30]}"),
@@ -1305,9 +1328,11 @@ async def song_info(_, m: Message):
     mins, secs = duration // 60, duration % 60
     g_stats = db.get_song_global_stats(song_data['name'])
     avg_rating, vote_count = db.get_avg_rating(song_data['name'][:25])
+    album_raw = song_data.get("album", "Unknown")
+    album_name = album_raw.get("name", "Unknown") if isinstance(album_raw, dict) else (album_raw or "Unknown")
     await msg.edit(f"ℹ️ **Song Info:**\n\n🎵 **Title:** {song_data['name']}\n"
-                   f"👤 **Artist:** {song_data['primaryArtists']}\n"
-                   f"💿 **Album:** {song_data.get('album', {}).get('name', 'Unknown')}\n"
+                   f"👤 **Artist:** {song_data.get('artist', song_data.get('primaryArtists','Unknown'))}\n"
+                   f"💿 **Album:** {album_name}\n"
                    f"📅 **Year:** {song_data.get('year', 'Unknown')}\n"
                    f"🌐 **Language:** {song_data.get('language', 'Unknown').capitalize()}\n"
                    f"⏱ **Duration:** {mins}:{secs:02d}\n"
