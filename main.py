@@ -7,6 +7,7 @@ from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from config import API_ID, API_HASH, BOT_TOKEN
 import database as db
+import apis
 
 app = Client("beatnova_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
@@ -108,46 +109,37 @@ def get_user_genre_from_history(user_id):
     return max(counts, key=counts.get)
 
 def search_jiosaavn(query):
-    try:
-        url = f"https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query={query}&page=1&limit=10"
-        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-        results = r.json()["data"]["results"]
-        if not results: return None, None, None, None
-        query_words = query.lower().split()
-        best = None
-        for song in results:
-            match = sum(1 for w in query_words if w in song["name"].lower())
-            if match >= len(query_words) * 0.6:
-                best = song
-                break
-        if not best: best = results[0]
-        return best["downloadUrl"][-1]["link"], f"{best['name']} - {best['primaryArtists']}", int(best["duration"]), best
-    except Exception as e:
-        print(f"Search error: {e}")
-        return None, None, None, None
+    """Legacy wrapper - uses apis.py"""
+    results = apis.search_songs(query, 10)
+    if not results: return None, None, None, None
+    s = results[0]
+    title = f"{s['name']} - {s['artist']}"
+    return s.get("download_url"), title, s.get("duration", 0), s
 
 def search_jiosaavn_quality(query, quality="320"):
-    try:
-        url = f"https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query={query}&page=1&limit=10"
-        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-        results = r.json()["data"]["results"]
-        if not results: return None, None, None, None
-        best = results[0]
-        dl_urls = best.get("downloadUrl", [])
-        quality_map = {"128": 0, "192": 1, "320": -1}
-        try: dl_url = dl_urls[quality_map.get(quality, -1)]["link"]
-        except: dl_url = dl_urls[-1]["link"]
-        return dl_url, f"{best['name']} - {best['primaryArtists']}", int(best["duration"]), best
-    except Exception as e:
-        print(f"Quality search error: {e}")
-        return None, None, None, None
+    """Legacy wrapper - uses apis.py"""
+    s = apis.search_song_download(query, quality)
+    if not s: return None, None, None, None
+    title = f"{s['name']} - {s['artist']}"
+    return s.get("download_url"), title, s.get("duration", 0), s
 
 def search_jiosaavn_multiple(query, limit=8):
-    try:
-        url = f"https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query={query}&page=1&limit={limit}"
-        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-        return r.json()["data"]["results"]
-    except: return []
+    """Legacy wrapper - uses apis.py"""
+    results = apis.search_songs(query, limit)
+    # Convert to old format for backward compat
+    out = []
+    for s in results:
+        out.append({
+            "name": s["name"],
+            "primaryArtists": s["artist"],
+            "album": {"name": s.get("album","Unknown")},
+            "year": s.get("year","Unknown"),
+            "duration": s.get("duration", 0),
+            "language": s.get("language","Unknown"),
+            "downloadUrl": [{"link": s.get("download_url",""), "url": s.get("download_url","")}],
+            "id": s.get("id",""),
+        })
+    return out[:limit]
 
 def get_lyrics(query):
     try:
@@ -662,20 +654,32 @@ async def artistinfo(_, m: Message):
         return
     query = parts[1].strip()
     msg = await m.reply(f"🎤 **Fetching artist info:** `{query}`...")
-    results = search_jiosaavn_multiple(f"{query} songs", 10)
-    if not results:
-        await msg.edit("❌ Artist not found!")
-        return
-    artist_name = results[0].get("primaryArtists", query).split(",")[0].strip()
-    years = [int(s.get("year", 0)) for s in results if str(s.get("year", "")).isdigit()]
-    since = min(years) if years else "Unknown"
-    langs = list(set(s.get("language", "").capitalize() for s in results if s.get("language")))
-    text = (f"🎤 **{artist_name}**\n\n🎵 **Known Songs:** {len(results)}+\n"
-            f"🎸 **Genres:** Bollywood / {' / '.join(langs[:2])}\n"
-            f"📅 **Active Since:** {since}\n\n**Popular Songs:**\n")
-    for i, s in enumerate(results[:5], 1):
-        text += f"{i}. {s['name']}\n"
-    text += f"\n🎵 `/artist {query}` — See all songs"
+    info = apis.get_artist_info(query)
+    top_tracks = apis.get_artist_top_tracks(query, 5)
+    similar = apis.get_similar_artists(query)[:4]
+    if info and info.get("name"):
+        listeners = info.get("listeners","Unknown")
+        if str(listeners).isdigit():
+            listeners = f"{int(listeners):,}"
+        text = (f"🎤 **{info['name']}**\n\n"
+                f"👥 Listeners: {listeners}\n"
+                f"🎸 Genres: {', '.join(info.get('tags',[])[:3]) or 'Unknown'}\n"
+                f"🎵 Similar: {', '.join(similar[:3]) or 'Unknown'}\n\n")
+        if info.get("bio"):
+            text += f"📖 **Bio:** {info['bio'][:200]}...\n\n"
+        if top_tracks:
+            text += "**🏆 Top Songs:**\n"
+            for i, t in enumerate(top_tracks[:5], 1):
+                text += f"{i}. {t['name']}\n"
+    else:
+        results = search_jiosaavn_multiple(f"{query} songs", 8)
+        if not results:
+            await msg.edit("❌ Artist not found!")
+            return
+        text = f"🎤 **{query}**\n\n**Popular Songs:**\n"
+        for i, s in enumerate(results[:5], 1):
+            text += f"{i}. {s['name']}\n"
+    text += f"\n🎵 `/topartist {query}` | `/similarartist {query}`"
     await msg.edit(text)
 
 @app.on_message(filters.command("artistquiz"))
@@ -1074,13 +1078,14 @@ async def genre(_, m: Message):
         await m.reply("❌ Available: `rock` `pop` `jazz` `classical` `rap` `indie` `sufi` `folk`")
         return
     msg = await m.reply(f"🔍 **Fetching {g} songs...**")
-    results = search_jiosaavn_multiple(queries[g], 8)
+    results = apis.search_genre(g, 10)
     if not results:
         await msg.edit("❌ No songs found!")
         return
     text = f"{emojis[g]} **{g.capitalize()} Songs:**\n\n"
-    for i, s in enumerate(results, 1):
-        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
+    for i, s in enumerate(results[:10], 1):
+        artist = s.get("artist", s.get("primaryArtists","Unknown"))
+        text += f"{i}. **{s['name']}** - {artist}\n"
     text += "\n📥 `/download [song name]`"
     await msg.edit(text)
 
@@ -1739,13 +1744,14 @@ async def regional(_, m: Message):
         return
     lang = parts[1].strip().lower()
     msg = await m.reply(f"🌍 **Fetching {lang} songs...**")
-    results = search_jiosaavn_multiple(f"top {lang} songs popular", 8)
+    results = apis.search_by_language(lang, 10)
     if not results:
         await msg.edit("❌ No songs found!")
         return
     text = f"🌍 **Top {lang.capitalize()} Songs:**\n\n"
-    for i, s in enumerate(results, 1):
-        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
+    for i, s in enumerate(results[:10], 1):
+        artist = s.get("artist", s.get("primaryArtists", "Unknown"))
+        text += f"{i}. **{s['name']}** - {artist}\n"
     text += "\n📥 `/download [song name]`"
     await msg.edit(text)
 
@@ -1911,20 +1917,19 @@ async def similar(_, m: Message):
     if not song_data:
         await msg.edit("❌ Song not found!")
         return
-    try:
-        sr = requests.get(f"https://jiosaavn-api-privatecvc2.vercel.app/songs/{song_data['id']}/suggestions", headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-        similar_list = sr.json().get("data", [])
-    except:
-        similar_list = []
-    if not similar_list:
-        similar_list = search_jiosaavn_multiple(f"{song_data['primaryArtists'].split(',')[0]} songs", 6)
-        text = f"🎵 **Similar to** `{query}`:\n\n"
-        for i, s in enumerate(similar_list, 1):
-            text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
+    # Use LastFM for better similar track recommendations
+    artist_name = song_data.get("artist", song_data.get("primaryArtists","")).split(",")[0].strip()
+    song_name = song_data.get("name", query)
+    similar_tracks = apis.get_similar_tracks(artist_name, song_name)
+    if similar_tracks:
+        text = f"🎵 **Similar to** `{query}` (LastFM):\n\n"
+        for i, t in enumerate(similar_tracks[:8], 1):
+            text += f"{i}. **{t['name']}** - {t['artist']}\n"
     else:
+        fallback = search_jiosaavn_multiple(f"{artist_name} songs", 6)
         text = f"🎵 **Similar to** `{query}`:\n\n"
-        for i, s in enumerate(similar_list[:8], 1):
-            text += f"{i}. **{s.get('name','Unknown')}** - {s.get('primaryArtists','Unknown')}\n"
+        for i, s in enumerate(fallback, 1):
+            text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
     text += "\n📥 `/download [song name]`"
     await msg.edit(text)
 
@@ -1936,16 +1941,14 @@ async def similarartist(_, m: Message):
         return
     query = parts[1].strip()
     msg = await m.reply(f"🎤 **Finding similar artists...**")
-    results = search_jiosaavn_multiple(f"artists like {query}", 8)
-    if not results:
-        await msg.edit("❌ No results!")
+    artists = apis.get_similar_artists(query)
+    if not artists:
+        await msg.edit("❌ No results found!")
         return
-    artists = list(dict.fromkeys([s["primaryArtists"].split(",")[0].strip() for s in results]))
-    artists = [a for a in artists if a.lower() != query.lower()][:6]
     text = f"🎤 **Artists Similar to {query}:**\n\n"
-    for i, a in enumerate(artists, 1):
+    for i, a in enumerate(artists[:8], 1):
         text += f"{i}. **{a}**\n"
-    text += f"\n🎵 Use `/artist [name]` to see their songs!"
+    text += f"\n🎵 `/artist [name]` — See their songs\nℹ️ `/artistinfo [name]` — Artist details"
     await msg.edit(text)
 
 @app.on_message(filters.command("skip"))
@@ -2252,8 +2255,18 @@ async def trendingartist(_, m: Message):
 @app.on_message(filters.command("trending"))
 async def trending(_, m: Message):
     msg = await m.reply("🌍 **Fetching trending...**")
-    results = search_jiosaavn_multiple("trending india 2024 top hits", 5)
-    results += search_jiosaavn_multiple("viral hindi songs 2024", 5)
+    # Try LastFM geo trending first
+    tracks = apis.get_trending("india")
+    if tracks:
+        text = "🌍 **Trending in India (LastFM):**\n\n"
+        for i, t in enumerate(tracks[:10], 1):
+            text += f"{i}. **{t['name']}** - {t['artist']}\n"
+        text += "\n📥 `/download [song name]`"
+        await msg.edit(text)
+        return
+    # Fallback
+    results = search_jiosaavn_multiple("trending india 2025 top hits", 5)
+    results += search_jiosaavn_multiple("viral hindi songs 2025", 5)
     seen, unique = set(), []
     for s in results:
         if s["name"] not in seen:
