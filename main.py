@@ -4,7 +4,7 @@ import requests
 import random
 import datetime
 from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from config import API_ID, API_HASH, BOT_TOKEN
 import database as db
 
@@ -15,13 +15,44 @@ BOT_USERNAME = "@SHADE_SONG_BOT"
 DEVELOPER = "@ZeroShader"
 START_TIME = datetime.datetime.now()
 
-# In-memory only (quiz state, today counter)
 active_quiz = {}
 today_downloads = {"count": 0, "date": datetime.date.today()}
+group_votes = {}
 
 PLACEHOLDERS = ["[song]", "[song name]", "[name]", "[artist]", "[line]", "[mood]", "[type]", "[a-z]"]
 
-# ========== HELPER FUNCTIONS ==========
+MUSIC_FACTS = [
+    "🎵 The longest officially released song is over 13 hours long!",
+    "🎵 'Happy Birthday to You' was the first song played in space!",
+    "🎵 A person's heartbeat syncs to the music they listen to!",
+    "🎵 Music can boost workout performance by up to 15%!",
+    "🎵 The guitar is the most played instrument in the world!",
+    "🎵 Mozart could memorize and write out an entire piece after hearing it once!",
+    "🎵 Listening to music releases dopamine — same as chocolate!",
+    "🎵 'Bohemian Rhapsody' took 3 weeks to record in 1975!",
+    "🎵 India has the world's largest film music industry!",
+    "🎵 Arijit Singh has sung over 300 Bollywood songs!",
+]
+
+EASTER_EGGS = [
+    "🥚 You found an easter egg! Here's a secret: The bot's name BeatNova comes from 'Beat' (music) + 'Nova' (star) ⭐",
+    "🎩 Secret unlocked! Did you know @ZeroShader built this bot from scratch? Legends do exist! 👑",
+    "🔮 Hidden message: The music never stops if you never stop listening! 🎵",
+    "🤫 Psst! Try /party in a group for a surprise! 🎉",
+    "🥚 Easter Egg #2: BeatNova processes thousands of songs... and hasn't complained once! 😄",
+]
+
+XP_REWARDS = {
+    "download": 10,
+    "first_download": 50,
+    "daily_reward": 25,
+    "rate_song": 5,
+    "streak_3": 20,
+    "streak_7": 50,
+    "quiz_win": 30,
+}
+
+# ========== HELPERS ==========
 
 def update_today_stats():
     today = datetime.date.today()
@@ -29,10 +60,22 @@ def update_today_stats():
         today_downloads["count"] = 0
         today_downloads["date"] = today
 
+def get_xp_bar(xp):
+    xp_in_level = xp % 100
+    filled = xp_in_level // 10
+    bar = "█" * filled + "░" * (10 - filled)
+    return f"{bar} {xp_in_level}/100 XP"
+
+def get_level_title(level):
+    titles = {1: "🌱 Newbie", 2: "🎵 Listener", 3: "🎧 Music Fan",
+              4: "🎸 Music Lover", 5: "🏆 Music Expert",
+              6: "💎 Music Master", 7: "👑 Music Legend", 8: "🌟 BeatNova Star"}
+    return titles.get(level, f"🔥 Level {level} Pro")
+
 def get_badges(user_id):
-    user = db.get_user(user_id)
-    downloads = user["downloads"] if user else 0
-    streak = user["streak"] if user else 0
+    user = db.get_user(user_id) or {}
+    downloads = user.get("downloads", 0)
+    streak = user.get("streak", 0)
     favs = db.count_favorites(user_id)
     rated = db.user_rated_count(user_id)
     badges = []
@@ -40,7 +83,8 @@ def get_badges(user_id):
     if downloads >= 10: badges.append("🎧 Music Fan")
     if downloads >= 50: badges.append("🎸 Music Lover")
     if downloads >= 100: badges.append("🥇 Music Master")
-    if downloads >= 500: badges.append("💎 Legend")
+    if downloads >= 200: badges.append("💎 Legend")
+    if downloads >= 500: badges.append("👑 BeatNova Star")
     if streak >= 3: badges.append("🔥 3-Day Streak")
     if streak >= 7: badges.append("⚡ 7-Day Streak")
     if streak >= 30: badges.append("👑 30-Day Streak")
@@ -67,14 +111,13 @@ def search_jiosaavn(query):
     try:
         url = f"https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query={query}&page=1&limit=10"
         r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-        data = r.json()
-        results = data["data"]["results"]
+        results = r.json()["data"]["results"]
         if not results: return None, None, None, None
         query_words = query.lower().split()
         best = None
         for song in results:
-            match_count = sum(1 for word in query_words if word in song["name"].lower())
-            if match_count >= len(query_words) * 0.6:
+            match = sum(1 for w in query_words if w in song["name"].lower())
+            if match >= len(query_words) * 0.6:
                 best = song
                 break
         if not best: best = results[0]
@@ -87,8 +130,7 @@ def search_jiosaavn_quality(query, quality="320"):
     try:
         url = f"https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query={query}&page=1&limit=10"
         r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-        data = r.json()
-        results = data["data"]["results"]
+        results = r.json()["data"]["results"]
         if not results: return None, None, None, None
         best = results[0]
         dl_urls = best.get("downloadUrl", [])
@@ -113,7 +155,7 @@ def get_lyrics(query):
         title = parts[0].strip()
         artist = parts[-1].strip() if len(parts) >= 2 else ""
         r = requests.get(f"https://lrclib.net/api/search?track_name={title}&artist_name={artist}",
-                        headers={"User-Agent": "MusicBot/1.0"}, timeout=15)
+                         headers={"User-Agent": "MusicBot/1.0"}, timeout=15)
         data = r.json()
         if not data: return None, None
         return data[0].get("plainLyrics"), f"{data[0].get('trackName', title)} - {data[0].get('artistName', artist)}"
@@ -131,10 +173,9 @@ def fetch_quote():
             '💬 "Without music, life would be a mistake." — Nietzsche',
             '💬 "Where words fail, music speaks." — H.C. Andersen',
             '💬 "One good thing about music, when it hits you, you feel no pain." — Bob Marley',
-            '💬 "Music gives a soul to the universe, wings to the mind." — Plato',
         ])
 
-def download_song(url, title):
+def download_song_file(url, title):
     os.makedirs("dl", exist_ok=True)
     safe = "".join(c for c in title if c.isalnum() or c in " -_")[:50]
     path = f"dl/{safe}.mp3"
@@ -143,17 +184,23 @@ def download_song(url, title):
         for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
     return path
 
-
-
 async def send_song(m, query, msg, quality="320"):
     dl_url, title, duration, song_data = search_jiosaavn_quality(query, quality)
     if not dl_url:
         await msg.edit("❌ Song not found! Try a different name.")
         return
-    await msg.edit(f"⬇️ **Downloading:** `{title}`...")
-    path = download_song(dl_url, title)
+
+    # Progress animation
+    for pct, bar in [("20%", "██░░░░░░░░"), ("50%", "█████░░░░░"), ("80%", "████████░░"), ("100%", "██████████")]:
+        try:
+            await msg.edit(f"⬇️ **Downloading...**\n`{bar}` {pct}")
+            await asyncio.sleep(0.4)
+        except: pass
+
+    path = download_song_file(dl_url, title)
     mins, secs = duration // 60, duration % 60
     user_id = m.from_user.id
+    is_first = db.get_user(user_id) is None or db.get_user(user_id)["downloads"] == 0
 
     update_today_stats()
     today_downloads["count"] += 1
@@ -165,26 +212,68 @@ async def send_song(m, query, msg, quality="320"):
     db.save_last_downloaded(user_id, title, f"{mins}:{secs:02d}", m.from_user.first_name)
     db.increment_song_downloads(title)
 
+    # XP system
+    xp_earned = XP_REWARDS["download"]
+    if is_first: xp_earned += XP_REWARDS["first_download"]
+    total_xp, new_level = db.add_xp(user_id, xp_earned)
+
+    # Group stats
+    if m.chat.type.name in ("GROUP", "SUPERGROUP"):
+        db.update_group_stats(m.chat.id, user_id, m.from_user.first_name)
+
     await msg.edit(f"📤 **Sending:** `{title}`...")
     album = song_data.get("album", {}).get("name", "Unknown") if song_data else "Unknown"
     year = song_data.get("year", "Unknown") if song_data else "Unknown"
 
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📤 Share", switch_inline_query=title),
-         InlineKeyboardButton("⭐ Save", callback_data=f"save_{title[:40]}")],
+    reaction_keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📥 Download", callback_data=f"dl_{title[:30]}"),
+         InlineKeyboardButton("📝 Lyrics", callback_data=f"lyr_{title[:35]}")],
         [InlineKeyboardButton("🎵 Similar", callback_data=f"sim_{title[:40]}"),
-         InlineKeyboardButton("🎤 Lyrics", callback_data=f"lyr_{title[:35]}")]
+         InlineKeyboardButton("⭐ Save", callback_data=f"save_{title[:40]}")],
+        [InlineKeyboardButton("👍 Like", callback_data=f"react_like_{title[:25]}"),
+         InlineKeyboardButton("🔥 Fire", callback_data=f"react_fire_{title[:25]}"),
+         InlineKeyboardButton("💔 Sad", callback_data=f"react_sad_{title[:25]}")],
     ])
+
     await app.send_audio(
         m.chat.id, path,
-        caption=f"🎵 **{title}**\n💿 {album} | 📅 {year}\n⏱ {mins}:{secs:02d} | 🎧 {quality}kbps\n👤 {m.from_user.first_name}\n\n🤖 {BOT_NAME} | {BOT_USERNAME}",
-        title=title, duration=duration, reply_markup=keyboard
+        caption=(f"🎵 **{title}**\n"
+                 f"💿 {album} | 📅 {year}\n"
+                 f"⏱ {mins}:{secs:02d} | 🎧 {quality}kbps\n"
+                 f"👤 {m.from_user.first_name}\n\n"
+                 f"🤖 {BOT_NAME} | {BOT_USERNAME}"),
+        title=title, duration=duration, reply_markup=reaction_keyboard
     )
     await msg.delete()
+
+    # XP notification
+    xp_msg = f"✨ **+{xp_earned} XP earned!**"
+    if is_first:
+        xp_msg = (f"🎉 **First Download Bonus!**\n\n"
+                  f"You earned **{xp_earned} XP** 🌟\n"
+                  f"🏅 Badge unlocked: **Music Explorer**\n"
+                  f"🎊 Welcome to BeatNova!")
+    streak_bonus = ""
+    user = db.get_user(user_id)
+    if user and user["streak"] == 3:
+        db.add_xp(user_id, XP_REWARDS["streak_3"])
+        streak_bonus = "\n🔥 **3-Day Streak! +20 XP bonus!**"
+    elif user and user["streak"] == 7:
+        db.add_xp(user_id, XP_REWARDS["streak_7"])
+        streak_bonus = "\n⚡ **7-Day Streak! +50 XP bonus!**"
+
+    await m.reply(f"{xp_msg}{streak_bonus}\n{get_xp_bar(total_xp)} | Level {new_level}")
     try: os.remove(path)
     except: pass
 
 # ========== CALLBACKS ==========
+
+@app.on_callback_query(filters.regex(r"^dl_"))
+async def dl_callback(_, cb):
+    song = cb.data[3:]
+    await cb.answer("Downloading...")
+    msg = await cb.message.reply(f"⬇️ Searching `{song}`...")
+    await send_song(cb.message, song, msg)
 
 @app.on_callback_query(filters.regex(r"^save_"))
 async def save_callback(_, cb):
@@ -235,6 +324,31 @@ async def lyrics_callback(_, cb):
             remaining = remaining[4096:]
     await cb.answer()
 
+@app.on_callback_query(filters.regex(r"^react_"))
+async def reaction_callback(_, cb):
+    parts = cb.data.split("_")
+    reaction = parts[1]
+    song = "_".join(parts[2:])
+    db.ensure_user(cb.from_user.id, cb.from_user.first_name)
+    db.save_reaction(cb.from_user.id, song, reaction)
+    all_reactions = db.get_song_reactions(song)
+    likes = all_reactions.get("like", 0)
+    fires = all_reactions.get("fire", 0)
+    sads = all_reactions.get("sad", 0)
+    emoji_map = {"like": "👍", "fire": "🔥", "sad": "💔"}
+    await cb.answer(f"{emoji_map[reaction]} Reacted!", show_alert=False)
+    try:
+        await cb.message.edit_reply_markup(InlineKeyboardMarkup([
+            [InlineKeyboardButton("📥 Download", callback_data=f"dl_{song[:30]}"),
+             InlineKeyboardButton("📝 Lyrics", callback_data=f"lyr_{song[:35]}")],
+            [InlineKeyboardButton("🎵 Similar", callback_data=f"sim_{song[:40]}"),
+             InlineKeyboardButton("⭐ Save", callback_data=f"save_{song[:40]}")],
+            [InlineKeyboardButton(f"👍 {likes}", callback_data=f"react_like_{song[:25]}"),
+             InlineKeyboardButton(f"🔥 {fires}", callback_data=f"react_fire_{song[:25]}"),
+             InlineKeyboardButton(f"💔 {sads}", callback_data=f"react_sad_{song[:25]}")],
+        ]))
+    except: pass
+
 @app.on_callback_query(filters.regex("dl_birthday"))
 async def birthday_dl(_, cb):
     await cb.answer()
@@ -245,9 +359,11 @@ async def birthday_dl(_, cb):
 async def rate_callback(_, cb):
     parts = cb.data.split("_")
     rating, song = int(parts[1]), "_".join(parts[2:])
+    db.ensure_user(cb.from_user.id, cb.from_user.first_name)
     db.save_rating(cb.from_user.id, song, rating)
+    db.add_xp(cb.from_user.id, XP_REWARDS["rate_song"])
     avg, count = db.get_avg_rating(song)
-    await cb.answer(f"✅ Rated {rating}⭐", show_alert=False)
+    await cb.answer(f"✅ Rated {rating}⭐ +{XP_REWARDS['rate_song']} XP!", show_alert=False)
     try:
         await cb.message.edit_reply_markup(InlineKeyboardMarkup([[
             InlineKeyboardButton(f"⭐ {avg:.1f}/5 ({count} votes)", callback_data="none")
@@ -262,104 +378,62 @@ async def quality_callback(_, cb):
     msg = await cb.message.reply(f"⬇️ Downloading `{song}` in **{quality}kbps**...")
     await send_song(cb.message, song, msg, quality)
 
+@app.on_callback_query(filters.regex(r"^vote_"))
+async def vote_callback(_, cb):
+    parts = cb.data.split("_")
+    group_id = int(parts[1])
+    choice = int(parts[2])
+    user_id = cb.from_user.id
+    if group_id not in group_votes:
+        await cb.answer("Vote ended!", show_alert=False)
+        return
+    group_votes[group_id]["votes"][user_id] = choice
+    await cb.answer(f"✅ Voted for option {choice+1}!", show_alert=False)
+
 @app.on_callback_query(filters.regex(r"^help_(?!back)"))
 async def help_category(_, cb):
     cat = cb.data[5:]
     texts = {
         "download": (
             "🎵 **Download & Search**\n\n"
-            "📥 `/download [song]` — Download song\n"
-            "🎧 `/quality [song]` — Choose quality\n"
-            "🎵 `/preview [song]` — 30 sec preview\n"
-            "🔍 `/search [song]` — Search top 5\n"
-            "ℹ️ `/info [song]` — Song details\n"
-            "📝 `/lyrics [song - artist]` — Full lyrics\n"
-            "📦 `/batch` — Download multiple\n"
-            "🎛 `/remix [song]` — Remix versions\n"
-            "🎸 `/acoustic [song]` — Acoustic versions\n"
-            "🎤 `/cover [song]` — Cover versions\n"
-            "🎼 `/lofi [song]` — Lo-Fi versions"
+            "📥 `/download [song]`\n🎧 `/quality [song]`\n🎵 `/preview [song]`\n"
+            "🔍 `/search [song]`\nℹ️ `/info [song]`\n📝 `/lyrics [song-artist]`\n"
+            "📦 `/batch`\n🎛 `/remix [song]`\n🎸 `/acoustic [song]`\n"
+            "🎤 `/cover [song]`\n🎼 `/lofi [song]`"
         ),
         "discover": (
             "🌍 **Browse & Discover**\n\n"
-            "🤖 `/ai_playlist [activity]`\n"
-            "💿 `/album [name]`\n"
-            "💿 `/albuminfo [name]`\n"
-            "🎤 `/artist [name]`\n"
-            "ℹ️ `/artistinfo [name]`\n"
-            "🎂 `/birthday [name]`\n"
-            "🔗 `/chain [song]`\n"
-            "📅 `/daily`\n"
-            "🌐 `/english` `/hindi` `/punjabi`\n"
-            "🔤 `/findlyrics [line]`\n"
-            "🎸 `/genre [type]`\n"
-            "🎼 `/karaoke [song]`\n"
-            "🔤 `/letter [A-Z]`\n"
-            "🎭 `/mood [type]`\n"
-            "🆕 `/newreleases`\n"
-            "🌙 `/night`\n"
-            "🎵 `/playlist [mood]`\n"
-            "🎲 `/random`\n"
-            "🎯 `/recommend`\n"
-            "🌍 `/regional [lang]`\n"
-            "⏱ `/short`\n"
-            "🎵 `/similar [song]`\n"
-            "🎤 `/similarartist [name]`\n"
-            "🏆 `/topartist [name]`\n"
-            "🎬 `/topbollywood`\n"
-            "🇮🇳 `/topindia`\n"
-            "🔥 `/top2025`\n"
-            "🔥 `/trendingartist`\n"
-            "🌍 `/trending`\n"
-            "🎭 `/vibe [song]`\n"
-            "📅 `/year [2000-2024]`\n"
-            "💿 `/discography [artist]`\n"
-            "🎵 `/duet [artist1] [artist2]`"
+            "🤖 `/ai_playlist`\n💿 `/album`\n💿 `/albuminfo`\n🎤 `/artist`\nℹ️ `/artistinfo`\n"
+            "🎂 `/birthday`\n🔗 `/chain`\n📅 `/daily`\n🌐 `/english` `/hindi` `/punjabi`\n"
+            "🔤 `/findlyrics`\n🎸 `/genre`\n🎼 `/karaoke`\n🔤 `/letter`\n🎭 `/mood`\n"
+            "🆕 `/newreleases`\n🌙 `/night`\n🎵 `/playlist`\n🎲 `/random`\n🎯 `/recommend`\n"
+            "🌍 `/regional`\n⏱ `/short`\n🎵 `/similar`\n🎤 `/similarartist`\n"
+            "🏆 `/topartist`\n🎬 `/topbollywood`\n🇮🇳 `/topindia`\n🔥 `/top2025`\n"
+            "🔥 `/trendingartist`\n🌍 `/trending`\n🎭 `/vibe`\n📅 `/year`\n💿 `/discography`"
         ),
         "games": (
             "🎮 **Games & Fun**\n\n"
-            "⚖️ `/compare [s1] | [s2]`\n"
-            "📅 `/challenge` — Daily challenge\n"
-            "🎯 `/fillblank` — Fill lyrics blank\n"
-            "🎯 `/guesssong` — Guess the song\n"
-            "🎮 `/musicquiz` — Music quiz\n"
-            "🎤 `/artistquiz` — Artist quiz\n"
-            "💬 `/quote` — Music quote\n"
-            "⭐ `/rate [song]` — Rate a song\n"
-            "🎵 `/topsongs` — Top rated\n"
-            "🏆 `/tournament` — Song tournament\n"
-            "📅 `/yeargame` — Year guess game"
+            "⚖️ `/compare`\n📅 `/challenge`\n🎯 `/fillblank`\n🎯 `/guesssong`\n"
+            "🎮 `/musicquiz`\n🎤 `/artistquiz`\n💬 `/quote`\n⭐ `/rate`\n🏆 `/topsongs`\n"
+            "🏆 `/tournament`\n📅 `/yeargame`\n🎵 `/musicfact`\n🥚 `/easteregg`\n🔮 `/secret`\n\n"
+            "**👥 Group Commands:**\n"
+            "🎮 `/groupquiz`\n🎵 `/songbattle`\n📊 `/votesong`\n🎉 `/party`\n"
+            "➕ `/addsong`\n⏭ `/skipparty`\n🛑 `/stopparty`\n📋 `/partyqueue`"
         ),
         "account": (
             "👤 **My Account**\n\n"
-            "🏅 `/badges` — My badges\n"
-            "💾 `/favorites` — My favorites\n"
-            "📊 `/genrestats` — Genre breakdown\n"
-            "📜 `/history` — Recent songs\n"
-            "🤝 `/invite` — Invite friends\n"
-            "🎵 `/lastdownload` — Last song\n"
-            "🏆 `/leaderboard` — Top users\n"
-            "👤 `/mystats` — My stats\n"
-            "📝 `/note [song] [text]` — Song note\n"
-            "👤 `/profile` — My profile\n"
-            "🗑 `/removefav [song]`\n"
-            "⭐ `/save [song]`\n"
-            "📤 `/share [song]` — Share card\n"
-            "🔔 `/subscribe` — Daily song\n"
-            "🔕 `/unsubscribe`\n"
-            "🔥 `/streak` — My streak\n"
-            "📋 `/wishlist [song]` — Wishlist\n"
-            "📋 `/mywishlist` — View wishlist"
+            "🏅 `/badges`\n💾 `/favorites`\n📊 `/genrestats`\n📜 `/history`\n"
+            "🤝 `/invite`\n🎵 `/lastdownload`\n🏆 `/leaderboard`\n👤 `/mystats`\n"
+            "📝 `/note`\n👤 `/profile`\n🗑 `/removefav`\n⭐ `/save`\n📤 `/share`\n"
+            "🔔 `/subscribe`\n🔕 `/unsubscribe`\n🔥 `/streak`\n🎁 `/dailyreward`\n"
+            "📋 `/wishlist`\n📋 `/mywishlist`"
         ),
         "stats": (
             "📊 **Stats & Info**\n\n"
-            "📊 `/activestats` — Most active users\n"
-            "⏱ `/ping` — Server latency\n"
-            "📤 `/share [song]` — Share card\n"
-            "🎵 `/songstats [song]` — Song analytics\n"
-            "📊 `/stats` — Bot stats\n"
-            "📅 `/todaystats` — Today's stats\n"
-            "⏰ `/uptime` — Bot uptime"
+            "📊 `/activestats`\n⏱ `/ping`\n📤 `/share`\n🎵 `/songstats`\n"
+            "📊 `/stats`\n📅 `/todaystats`\n⏰ `/uptime`\n\n"
+            "**👥 Group Stats:**\n"
+            "🏆 `/gleaderboard`\n📊 `/groupstats`\n🥇 `/topuser`"
         )
     }
     text = texts.get(cat, "❌ Unknown category!")
@@ -376,10 +450,7 @@ async def help_back(_, cb):
          InlineKeyboardButton("👤 My Account", callback_data="help_account")],
         [InlineKeyboardButton("📊 Stats & Info", callback_data="help_stats")]
     ])
-    await cb.message.edit_text(
-        f"❓ **{BOT_NAME} Help Menu**\n\nChoose a category:",
-        reply_markup=keyboard
-    )
+    await cb.message.edit_text(f"❓ **{BOT_NAME} Help Menu**\n\nChoose a category:", reply_markup=keyboard)
     await cb.answer()
 
 @app.on_callback_query(filters.regex(r"^none$"))
@@ -427,6 +498,24 @@ async def activestats(_, m: Message):
         text += f"{medals[i]} **{u['name']}** — {u['downloads']} downloads\n"
     await m.reply(text)
 
+@app.on_message(filters.command("addsong"))
+async def addsong(_, m: Message):
+    if m.chat.type.name not in ("GROUP", "SUPERGROUP"):
+        await m.reply("❌ Group mein use karo!")
+        return
+    group_id = m.chat.id
+    if not db.get_group_setting(group_id, "party_mode"):
+        await m.reply("❌ Party mode active nahi hai!\nPehle `/party` start karo.")
+        return
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip():
+        await m.reply("❌ Example: `/addsong Tum Hi Ho`")
+        return
+    song = parts[1].strip()
+    db.add_to_party_queue(group_id, m.from_user.id, m.from_user.first_name, song)
+    queue = db.get_party_queue(group_id)
+    await m.reply(f"✅ **Added to Party Queue!**\n\n🎵 `{song}`\n📋 Position: #{len(queue)}\n👤 Added by: {m.from_user.first_name}")
+
 @app.on_message(filters.command("ai_playlist"))
 async def ai_playlist(_, m: Message):
     parts = m.text.split(None, 1)
@@ -434,12 +523,10 @@ async def ai_playlist(_, m: Message):
         await m.reply("🤖 **Choose activity:**\n`/ai_playlist gym` 💪\n`/ai_playlist study` 📚\n`/ai_playlist heartbreak` 💔\n`/ai_playlist sleep` 😴\n`/ai_playlist party` 🎉\n`/ai_playlist romantic` 💕\n`/ai_playlist morning` 🌅\n`/ai_playlist roadtrip` 🚗")
         return
     activity = parts[1].strip().lower()
-    queries = {
-        "gym": "workout gym motivation", "study": "study focus calm instrumental",
-        "heartbreak": "heartbreak sad emotional hindi", "sleep": "sleep relaxing calm",
-        "party": "party dance upbeat hindi", "romantic": "romantic love songs",
-        "morning": "morning fresh motivational", "roadtrip": "roadtrip travel songs"
-    }
+    queries = {"gym": "workout gym motivation", "study": "study focus calm instrumental",
+               "heartbreak": "heartbreak sad emotional hindi", "sleep": "sleep relaxing calm",
+               "party": "party dance upbeat hindi", "romantic": "romantic love songs",
+               "morning": "morning fresh motivational", "roadtrip": "roadtrip travel songs"}
     emojis = {"gym": "💪", "study": "📚", "heartbreak": "💔", "sleep": "😴", "party": "🎉", "romantic": "💕", "morning": "🌅", "roadtrip": "🚗"}
     if activity not in queries:
         await m.reply("❌ Available: `gym` `study` `heartbreak` `sleep` `party` `romantic` `morning` `roadtrip`")
@@ -490,18 +577,10 @@ async def albuminfo(_, m: Message):
     artist = results[0].get("primaryArtists", "Unknown")
     year = results[0].get("year", "Unknown")
     lang = results[0].get("language", "Unknown").capitalize()
-    song_count = len(results)
     total_dur = sum(int(s.get("duration", 0)) for s in results)
-    total_mins = total_dur // 60
-    text = (
-        f"💿 **{album_name}**\n\n"
-        f"👤 **Artist:** {artist}\n"
-        f"📅 **Year:** {year}\n"
-        f"🌐 **Language:** {lang}\n"
-        f"🎵 **Songs:** {song_count}+\n"
-        f"⏱ **Total Duration:** ~{total_mins} mins\n\n"
-        f"**Tracklist:**\n"
-    )
+    text = (f"💿 **{album_name}**\n\n👤 **Artist:** {artist}\n📅 **Year:** {year}\n"
+            f"🌐 **Language:** {lang}\n🎵 **Songs:** {len(results)}+\n"
+            f"⏱ **Total:** ~{total_dur//60} mins\n\n**Tracklist:**\n")
     for i, s in enumerate(results[:10], 1):
         d = int(s["duration"])
         text += f"{i}. {s['name']} ({d//60}:{d%60:02d})\n"
@@ -540,19 +619,12 @@ async def artistinfo(_, m: Message):
         await msg.edit("❌ Artist not found!")
         return
     artist_name = results[0].get("primaryArtists", query).split(",")[0].strip()
-    years = [int(s.get("year", 0)) for s in results if s.get("year", "").isdigit()]
+    years = [int(s.get("year", 0)) for s in results if str(s.get("year", "")).isdigit()]
     since = min(years) if years else "Unknown"
     langs = list(set(s.get("language", "").capitalize() for s in results if s.get("language")))
-    lang_str = " / ".join(langs[:3]) if langs else "Unknown"
-    song_count = len(results)
-    text = (
-        f"🎤 **{artist_name}**\n\n"
-        f"🎵 **Known Songs:** {song_count}+\n"
-        f"🎸 **Genres:** Bollywood / {lang_str}\n"
-        f"📅 **Active Since:** {since}\n"
-        f"🌐 **Language:** {lang_str}\n\n"
-        f"**Popular Songs:**\n"
-    )
+    text = (f"🎤 **{artist_name}**\n\n🎵 **Known Songs:** {len(results)}+\n"
+            f"🎸 **Genres:** Bollywood / {' / '.join(langs[:2])}\n"
+            f"📅 **Active Since:** {since}\n\n**Popular Songs:**\n")
     for i, s in enumerate(results[:5], 1):
         text += f"{i}. {s['name']}\n"
     text += f"\n🎵 `/artist {query}` — See all songs"
@@ -574,7 +646,7 @@ async def artistquiz(_, m: Message):
     random.shuffle(options)
     labels = ["A", "B", "C", "D"]
     active_quiz[chat_id] = {"answer": correct_artist.lower(), "title": correct_song, "artist": correct_artist, "type": "artistquiz", "options": options}
-    text = f"🎤 **Artist Quiz!**\n\n🎵 **Song:** {correct_song}\n\n❓ **Who sang this song?**\n\n"
+    text = f"🎤 **Artist Quiz!**\n\n🎵 **Song:** {correct_song}\n\n❓ **Who sang this?**\n\n"
     for i, opt in enumerate(options):
         text += f"**{labels[i]}.** {opt}\n"
     text += "\n💭 Reply A, B, C or D!\n⏱ 20 seconds!"
@@ -590,13 +662,18 @@ async def artistquiz(_, m: Message):
 @app.on_message(filters.command("badges"))
 async def badges(_, m: Message):
     user_id = m.from_user.id
+    db.ensure_user(user_id, m.from_user.first_name)
     user = db.get_user(user_id) or {}
     downloads = user.get("downloads", 0)
+    xp = user.get("xp", 0)
+    level = user.get("level", 1)
     badge_list = get_badges(user_id)
-    text = f"🏅 **{m.from_user.first_name}'s Badges:**\n\n"
+    text = (f"🏅 **{m.from_user.first_name}'s Badges:**\n\n")
     for b in badge_list:
         text += f"• {b}\n"
-    text += f"\n📥 Downloads: {downloads} | Level: {get_level(downloads)}"
+    text += (f"\n📥 Downloads: {downloads}\n"
+             f"✨ XP: {xp} | {get_xp_bar(xp)}\n"
+             f"🎖 Level: {level} — {get_level_title(level)}")
     await m.reply(text)
 
 @app.on_message(filters.command("batch"))
@@ -670,8 +747,7 @@ async def challenge(_, m: Message):
         return
     song = random.choice(results)
     random.seed()
-    title = song["name"]
-    artist = song["primaryArtists"]
+    title, artist = song["name"], song["primaryArtists"]
     lyrics_text, _ = get_lyrics(f"{title} - {artist}")
     if lyrics_text:
         lines = [l.strip() for l in lyrics_text.split("\n") if len(l.strip()) > 20]
@@ -680,11 +756,8 @@ async def challenge(_, m: Message):
         line = f"Hint: Artist is **{artist}**"
     chat_id = m.chat.id
     active_quiz[chat_id] = {"answer": title.lower(), "title": title, "artist": artist, "type": "guess"}
-    await m.reply(
-        f"🎯 **Daily Challenge!**\n📅 {now.strftime('%d %b %Y')}\n\n"
-        f"🎵 **Guess this song:**\n_{line}_\n\n"
-        f"💭 Reply with song name!\n⏱ 30 seconds!\nUse `/skip` to skip."
-    )
+    await m.reply(f"🎯 **Daily Challenge!**\n📅 {now.strftime('%d %b %Y')}\n\n"
+                  f"🎵 **Guess this song:**\n_{line}_\n\n💭 Reply with song name!\n⏱ 30 seconds!")
     await asyncio.sleep(30)
     if chat_id in active_quiz and active_quiz[chat_id].get("type") == "guess":
         del active_quiz[chat_id]
@@ -748,7 +821,7 @@ async def cover(_, m: Message):
 @app.on_message(filters.command("daily"))
 async def daily(_, m: Message):
     now = datetime.datetime.now()
-    keywords = ["hindi hits popular", "bollywood popular songs", "top songs india", "romantic hindi", "new hindi songs 2024"]
+    keywords = ["hindi hits popular", "bollywood popular songs", "top songs india", "romantic hindi"]
     random.seed(now.day + now.month * 100)
     query = random.choice(keywords)
     random.seed()
@@ -761,6 +834,40 @@ async def daily(_, m: Message):
     song = random.choice(results)
     random.seed()
     await send_song(m, song["name"], msg)
+
+@app.on_message(filters.command("dailygroup"))
+async def dailygroup(_, m: Message):
+    if m.chat.type.name not in ("GROUP", "SUPERGROUP"):
+        await m.reply("❌ Group mein use karo!")
+        return
+    current = db.get_group_setting(m.chat.id, "daily_song")
+    new_val = 0 if current else 1
+    db.set_group_setting(m.chat.id, "daily_song", new_val)
+    if new_val:
+        await m.reply("🔔 **Daily Group Song: ON!**\nHar roz subah ek song aayega! 🎵")
+    else:
+        await m.reply("🔕 **Daily Group Song: OFF**")
+
+@app.on_message(filters.command("dailyreward"))
+async def dailyreward(_, m: Message):
+    user_id = m.from_user.id
+    db.ensure_user(user_id, m.from_user.first_name)
+    if not db.can_claim_reward(user_id):
+        await m.reply("⏰ **Already claimed today!**\nAao kal phir! 🌅\n\nXP earn karne ke liye songs download karo!")
+        return
+    db.claim_reward(user_id)
+    xp_earned = XP_REWARDS["daily_reward"]
+    total_xp, level = db.add_xp(user_id, xp_earned)
+    user = db.get_user(user_id)
+    streak = user.get("streak", 0)
+    await m.reply(
+        f"🎁 **Daily Reward Claimed!**\n\n"
+        f"✨ **+{xp_earned} XP** earned!\n"
+        f"🔥 Streak: {streak} days\n"
+        f"{get_xp_bar(total_xp)}\n"
+        f"🎖 Level: {level} — {get_level_title(level)}\n\n"
+        f"Kal phir aao double reward ke liye! 🌟"
+    )
 
 @app.on_message(filters.command("discography"))
 async def discography(_, m: Message):
@@ -801,7 +908,7 @@ async def download(_, m: Message):
 async def duet(_, m: Message):
     parts = m.text.split(None, 1)
     if len(parts) < 2 or not parts[1].strip():
-        await m.reply("❌ Example: `/duet Arijit Singh Shreya Ghoshal`")
+        await m.reply("❌ Example: `/duet Arijit Shreya`")
         return
     query = parts[1].strip()
     msg = await m.reply(f"🎶 **Fetching duets:** `{query}`...")
@@ -816,6 +923,10 @@ async def duet(_, m: Message):
     await msg.edit(text)
 
 # E
+
+@app.on_message(filters.command("easteregg"))
+async def easteregg(_, m: Message):
+    await m.reply(random.choice(EASTER_EGGS))
 
 @app.on_message(filters.command("english"))
 async def english(_, m: Message):
@@ -865,14 +976,10 @@ async def fillblank(_, m: Message):
     blank_idx = random.randint(1, len(words)-2)
     answer = words[blank_idx].lower().strip(",.!?")
     words[blank_idx] = "______"
-    blanked_line = " ".join(words)
+    blanked = " ".join(words)
     active_quiz[chat_id] = {"answer": answer, "title": title, "artist": artist, "type": "fillblank"}
-    await msg.edit(
-        f"🎯 **Fill in the Blank!**\n\n"
-        f"🎵 **Song:** {title}\n👤 **Artist:** {artist}\n\n"
-        f"**Complete the lyric:**\n_{blanked_line}_\n\n"
-        f"💭 Reply with the missing word!\n⏱ 20 seconds!\nUse `/skip` to skip."
-    )
+    await msg.edit(f"🎯 **Fill in the Blank!**\n\n🎵 **Song:** {title}\n👤 **Artist:** {artist}\n\n"
+                   f"**Complete the lyric:**\n_{blanked}_\n\n💭 Reply with the missing word!\n⏱ 20 seconds!")
     await asyncio.sleep(20)
     if chat_id in active_quiz and active_quiz[chat_id].get("type") == "fillblank":
         del active_quiz[chat_id]
@@ -937,19 +1044,90 @@ async def genrestats(_, m: Message):
         await m.reply("❌ No history yet!\nDownload songs first.")
         return
     total = len(songs)
-    hindi = sum(1 for s in songs if any(w in s.lower() for w in ["hindi","tum","dil","pyar","ishq","tera","mera","aaj"]))
-    english = sum(1 for s in songs if any(w in s.lower() for w in ["love","baby","night","light","heart","you","my"]))
-    punjabi = sum(1 for s in songs if any(w in s.lower() for w in ["punjabi","jatt","kudi","yaar","sohne"]))
-    other = total - hindi - english - punjabi
+    hindi = sum(1 for s in songs if any(w in s.lower() for w in ["hindi","tum","dil","pyar","ishq","tera","mera"]))
+    english = sum(1 for s in songs if any(w in s.lower() for w in ["love","baby","night","light","heart"]))
+    punjabi = sum(1 for s in songs if any(w in s.lower() for w in ["punjabi","jatt","kudi","yaar"]))
+    other = max(0, total - hindi - english - punjabi)
     def pct(n): return f"{(n/total*100):.0f}%" if total > 0 else "0%"
-    await m.reply(
-        f"📊 **{m.from_user.first_name}'s Genre Breakdown:**\n\n"
-        f"🇮🇳 Hindi: {hindi} songs ({pct(hindi)})\n"
-        f"🌍 English: {english} songs ({pct(english)})\n"
-        f"🎵 Punjabi: {punjabi} songs ({pct(punjabi)})\n"
-        f"🎶 Other: {other} songs ({pct(other)})\n\n"
-        f"📥 Total Downloads: {total}"
-    )
+    await m.reply(f"📊 **{m.from_user.first_name}'s Genre Breakdown:**\n\n"
+                  f"🇮🇳 Hindi: {hindi} ({pct(hindi)})\n🌍 English: {english} ({pct(english)})\n"
+                  f"🎵 Punjabi: {punjabi} ({pct(punjabi)})\n🎶 Other: {other} ({pct(other)})\n\n"
+                  f"📥 Total: {total}")
+
+@app.on_message(filters.command("gleaderboard"))
+async def gleaderboard(_, m: Message):
+    if m.chat.type.name not in ("GROUP", "SUPERGROUP"):
+        await m.reply("❌ Group mein use karo!")
+        return
+    rows = db.get_group_leaderboard(m.chat.id)
+    if not rows:
+        await m.reply("❌ No downloads in this group yet!")
+        return
+    medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+    text = f"🏆 **{m.chat.title} Leaderboard:**\n\n"
+    for i, row in enumerate(rows, 0):
+        text += f"{medals[i]} **{row['user_name']}** — {row['downloads']} downloads\n"
+    text += "\n🎵 Download songs to climb up!"
+    await m.reply(text)
+
+@app.on_message(filters.command("groupmood"))
+async def groupmood(_, m: Message):
+    if m.chat.type.name not in ("GROUP", "SUPERGROUP"):
+        await m.reply("❌ Group mein use karo!")
+        return
+    moods = ["happy 😊", "sad 😢", "party 🎉", "romantic 💕", "chill 😌"]
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("😊 Happy", callback_data="none"),
+         InlineKeyboardButton("😢 Sad", callback_data="none")],
+        [InlineKeyboardButton("🎉 Party", callback_data="none"),
+         InlineKeyboardButton("💕 Romantic", callback_data="none")],
+        [InlineKeyboardButton("😌 Chill", callback_data="none")]
+    ])
+    await m.reply(f"🎭 **Group Mood Poll!**\n\nSabka mood kya hai?\nBot best playlist suggest karega!\n\n"
+                  f"Vote karo neeche 👇", reply_markup=keyboard)
+
+@app.on_message(filters.command("groupquiz"))
+async def groupquiz(_, m: Message):
+    if m.chat.type.name not in ("GROUP", "SUPERGROUP"):
+        await m.reply("❌ Group mein use karo!")
+        return
+    msg = await m.reply("🎮 **Group Music Quiz Starting!**\n\nSabse pehle jawab do — winner hoga! 🏆")
+    chat_id = m.chat.id
+    results = search_jiosaavn_multiple("popular hindi bollywood songs", 20)
+    if not results:
+        await msg.edit("❌ Could not fetch!")
+        return
+    correct = random.choice(results)
+    title, artist = correct["name"], correct["primaryArtists"]
+    lyrics_text, _ = get_lyrics(f"{title} - {artist}")
+    if lyrics_text:
+        lines = [l.strip() for l in lyrics_text.split("\n") if len(l.strip()) > 20]
+        line = random.choice(lines[:10]) if lines else f"Artist: **{artist}**"
+    else:
+        line = f"Artist: **{artist}**"
+    active_quiz[chat_id] = {"answer": title.lower(), "title": title, "artist": artist, "type": "guess"}
+    await msg.edit(f"🎮 **Group Quiz!** 👥\n\n🎵 **Lyrics:**\n_{line}_\n\n"
+                   f"💭 **Sabse pehle sahi answer karega wo jitega!**\n⏱ 30 seconds!")
+    await asyncio.sleep(30)
+    if chat_id in active_quiz and active_quiz[chat_id].get("type") == "guess":
+        del active_quiz[chat_id]
+        await m.reply(f"⏱ **Time's up! Kisi ne sahi answer nahi diya!**\nAnswer: **{title}** by {artist}")
+
+@app.on_message(filters.command("groupstats"))
+async def groupstats(_, m: Message):
+    if m.chat.type.name not in ("GROUP", "SUPERGROUP"):
+        await m.reply("❌ Group mein use karo!")
+        return
+    group_id = m.chat.id
+    total = db.get_group_total_downloads(group_id)
+    members = db.get_group_members_count(group_id)
+    top = db.get_group_leaderboard(group_id, 1)
+    top_name = top[0]["user_name"] if top else "None"
+    await m.reply(f"📊 **{m.chat.title} Stats:**\n\n"
+                  f"👥 Active Members: {members}\n"
+                  f"📥 Total Downloads: {total}\n"
+                  f"🥇 Top User: {top_name}\n\n"
+                  f"🏆 `/gleaderboard` — See full ranking")
 
 @app.on_message(filters.command("guesssong"))
 async def guesssong(_, m: Message):
@@ -968,10 +1146,8 @@ async def guesssong(_, m: Message):
     else:
         line = f"Hint: Artist is **{artist}**"
     active_quiz[chat_id] = {"answer": title.lower(), "title": title, "artist": artist, "type": "guess"}
-    await msg.edit(
-        f"🎯 **Guess The Song!**\n\n🎵 **Lyrics:**\n_{line}_\n\n"
-        f"💭 Reply with song name!\n⏱ 30 seconds!\nUse `/skip` to skip."
-    )
+    await msg.edit(f"🎯 **Guess The Song!**\n\n🎵 **Lyrics:**\n_{line}_\n\n"
+                   f"💭 Reply with song name!\n⏱ 30 seconds!\nUse `/skip` to skip.")
     await asyncio.sleep(30)
     if chat_id in active_quiz and active_quiz[chat_id].get("type") == "guess":
         del active_quiz[chat_id]
@@ -988,10 +1164,7 @@ async def help_cmd(_, m: Message):
          InlineKeyboardButton("👤 My Account", callback_data="help_account")],
         [InlineKeyboardButton("📊 Stats & Info", callback_data="help_stats")]
     ])
-    await m.reply(
-        f"❓ **{BOT_NAME} Help Menu**\n\nChoose a category below 👇",
-        reply_markup=keyboard
-    )
+    await m.reply(f"❓ **{BOT_NAME} Help Menu**\n\nChoose a category below 👇", reply_markup=keyboard)
 
 @app.on_message(filters.command("hindi"))
 async def hindi(_, m: Message):
@@ -1031,30 +1204,24 @@ async def song_info(_, m: Message):
         return
     mins, secs = duration // 60, duration % 60
     g_stats = db.get_song_global_stats(song_data['name'])
-    await msg.edit(
-        f"ℹ️ **Song Info:**\n\n"
-        f"🎵 **Title:** {song_data['name']}\n"
-        f"👤 **Artist:** {song_data['primaryArtists']}\n"
-        f"💿 **Album:** {song_data.get('album', {}).get('name', 'Unknown')}\n"
-        f"📅 **Year:** {song_data.get('year', 'Unknown')}\n"
-        f"🌐 **Language:** {song_data.get('language', 'Unknown').capitalize()}\n"
-        f"⏱ **Duration:** {mins}:{secs:02d}\n"
-        f"📥 **Bot Downloads:** {g_stats.get('downloads', 0)}\n\n"
-        f"📥 `/download {song_data['name']}`"
-    )
+    avg_rating, vote_count = db.get_avg_rating(song_data['name'][:25])
+    await msg.edit(f"ℹ️ **Song Info:**\n\n🎵 **Title:** {song_data['name']}\n"
+                   f"👤 **Artist:** {song_data['primaryArtists']}\n"
+                   f"💿 **Album:** {song_data.get('album', {}).get('name', 'Unknown')}\n"
+                   f"📅 **Year:** {song_data.get('year', 'Unknown')}\n"
+                   f"🌐 **Language:** {song_data.get('language', 'Unknown').capitalize()}\n"
+                   f"⏱ **Duration:** {mins}:{secs:02d}\n"
+                   f"📥 **Bot Downloads:** {g_stats.get('downloads', 0)}\n"
+                   f"⭐ **Rating:** {avg_rating:.1f}/5 ({vote_count} votes)\n\n"
+                   f"📥 `/download {song_data['name']}`")
 
 @app.on_message(filters.command("invite"))
 async def invite(_, m: Message):
     user_id = m.from_user.id
     db.ensure_user(user_id, m.from_user.first_name)
-    await m.reply(
-        f"🤝 **Invite Friends to {BOT_NAME}!**\n\n"
-        f"Share this bot with your friends:\n"
-        f"👉 {BOT_USERNAME}\n\n"
-        f"📊 **Your Invite Points:** 0\n\n"
-        f"🏆 Top inviters appear on `/leaderboard`!\n\n"
-        f"_Share the music, spread the love!_ 🎵"
-    )
+    await m.reply(f"🤝 **Invite Friends to {BOT_NAME}!**\n\n"
+                  f"Share this bot:\n👉 {BOT_USERNAME}\n\n"
+                  f"_Share the music, spread the love!_ 🎵")
 
 # K
 
@@ -1075,7 +1242,7 @@ async def karaoke(_, m: Message):
             seen.add(s["name"])
             unique.append(s)
     if not unique:
-        await msg.edit(f"❌ No karaoke found!\n💡 Try:\n📥 `/download {query} karaoke`\n📥 `/download {query} instrumental`")
+        await msg.edit(f"❌ No karaoke found!\n💡 Try:\n📥 `/download {query} karaoke`")
         return
     text = f"🎼 **Karaoke/Instrumental: `{query}`**\n\n"
     for i, s in enumerate(unique[:6], 1):
@@ -1087,8 +1254,7 @@ async def karaoke(_, m: Message):
 
 @app.on_message(filters.command("lastdownload"))
 async def lastdownload(_, m: Message):
-    user_id = m.from_user.id
-    s = db.get_last_downloaded(user_id)
+    s = db.get_last_downloaded(m.from_user.id)
     if not s:
         await m.reply("🎵 No song downloaded yet!")
         return
@@ -1100,11 +1266,12 @@ async def leaderboard(_, m: Message):
     if not users:
         await m.reply("❌ No data yet!")
         return
-    text = "🏆 **Top Music Lovers:**\n\n"
     medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+    text = "🏆 **Top Music Lovers:**\n\n"
     for i, u in enumerate(users[:10], 0):
         streak_text = f" 🔥{u['streak']}" if u.get("streak", 0) >= 3 else ""
-        text += f"{medals[i]} **{u['name']}** — {u['downloads']} downloads{streak_text}\n"
+        xp_text = f" ✨{u.get('xp',0)}xp"
+        text += f"{medals[i]} **{u['name']}** — {u['downloads']} downloads{streak_text}{xp_text}\n"
     text += "\n📥 Download more to climb up! 🚀"
     await m.reply(text)
 
@@ -1136,7 +1303,7 @@ async def lofi(_, m: Message):
     query = parts[1].strip()
     msg = await m.reply(f"🎵 **Searching Lo-Fi:** `{query}`...")
     results = []
-    for q in [f"{query} lofi", f"{query} lo-fi", f"{query} lofi remix", f"lofi {query}"]:
+    for q in [f"{query} lofi", f"{query} lo-fi", f"lofi {query}"]:
         results += search_jiosaavn_multiple(q, 3)
     seen, unique = set(), []
     for s in results:
@@ -1146,7 +1313,7 @@ async def lofi(_, m: Message):
     if not unique:
         await msg.edit(f"❌ No Lo-Fi found!\n💡 Try: `/download {query} lofi`")
         return
-    text = f"🎵 **Lo-Fi versions of:** `{query}`\n\n"
+    text = f"🎵 **Lo-Fi: `{query}`**\n\n"
     for i, s in enumerate(unique[:6], 1):
         text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
     text += "\n📥 `/download [song name]`"
@@ -1200,6 +1367,18 @@ async def mood(_, m: Message):
     text += "\n📥 `/download [song name]`"
     await msg.edit(text)
 
+@app.on_message(filters.command("musicfact"))
+async def musicfact(_, m: Message):
+    await m.reply(f"🎵 **Music Fact:**\n\n{random.choice(MUSIC_FACTS)}")
+
+@app.on_message(filters.command("musicmatch"))
+async def musicmatch(_, m: Message):
+    if m.chat.type.name not in ("GROUP", "SUPERGROUP"):
+        await m.reply("❌ Group mein use karo!\nExample: `/musicmatch @user1 @user2`")
+        return
+    await m.reply("🎵 **Music Match!**\n\nDono users ke downloads compare ho rahe hain...\n\n"
+                  "_(Feature coming soon — abhi apni history `/history` mein dekho!)_ 🎵")
+
 @app.on_message(filters.command("musicquiz"))
 async def musicquiz(_, m: Message):
     msg = await m.reply("🎮 **Preparing Music Quiz...**")
@@ -1237,28 +1416,29 @@ async def mystats(_, m: Message):
         return
     songs = db.get_history(user_id, 50)
     most = max(set(songs), key=songs.count) if songs else "None"
-    await m.reply(
-        f"👤 **{m.from_user.first_name}'s Stats:**\n\n"
-        f"📥 Downloads: {user['downloads']}\n"
-        f"🎵 Most Downloaded: {most}\n"
-        f"📜 History: {len(db.get_history(user_id))}\n"
-        f"⭐ Favorites: {db.count_favorites(user_id)}\n"
-        f"🔥 Streak: {user.get('streak', 0)} days\n"
-        f"🎸 Fav Genre: {get_user_genre_from_history(user_id)}\n"
-        f"🏅 Level: {get_level(user['downloads'])}"
-    )
+    xp = user.get("xp", 0)
+    level = user.get("level", 1)
+    await m.reply(f"👤 **{m.from_user.first_name}'s Stats:**\n\n"
+                  f"📥 Downloads: {user['downloads']}\n"
+                  f"🎵 Most Downloaded: {most}\n"
+                  f"📜 History: {len(db.get_history(user_id))}\n"
+                  f"⭐ Favorites: {db.count_favorites(user_id)}\n"
+                  f"🔥 Streak: {user.get('streak', 0)} days\n"
+                  f"✨ XP: {xp} | {get_xp_bar(xp)}\n"
+                  f"🎖 Level: {level} — {get_level_title(level)}\n"
+                  f"🎸 Genre: {get_user_genre_from_history(user_id)}\n"
+                  f"🏅 Rank: {get_level(user['downloads'])}")
 
 @app.on_message(filters.command("mywishlist"))
 async def mywishlist(_, m: Message):
-    user_id = m.from_user.id
-    items = db.get_wishlist(user_id)
+    items = db.get_wishlist(m.from_user.id)
     if not items:
         await m.reply("📋 Wishlist empty!\nUse `/wishlist [song]` to add.")
         return
     text = "📋 **Your Wishlist:**\n\n"
     for i, s in enumerate(items, 1):
         text += f"{i}. {s}\n"
-    text += "\n📥 `/download [song name]` to download!"
+    text += "\n📥 `/download [song name]`"
     await m.reply(text)
 
 # N
@@ -1296,22 +1476,54 @@ async def night(_, m: Message):
 async def note(_, m: Message):
     parts = m.text.split(None, 1)
     if len(parts) < 2 or "|" not in parts[1]:
-        await m.reply("❌ Format: `/note Song Name | Your note`\nExample: `/note Tum Hi Ho | Best song ever!`")
+        await m.reply("❌ Format: `/note Song | Note`\nExample: `/note Tum Hi Ho | Best song ever!`")
         return
     song, note_text = parts[1].split("|", 1)
-    song, note_text = song.strip(), note_text.strip()
-    db.save_note(m.from_user.id, song, note_text)
-    await m.reply(f"📝 **Note saved!**\n\n🎵 **{song}**\n💬 _{note_text}_")
+    db.save_note(m.from_user.id, song.strip(), note_text.strip())
+    await m.reply(f"📝 **Note saved!**\n\n🎵 **{song.strip()}**\n💬 _{note_text.strip()}_")
 
 # P
+
+@app.on_message(filters.command("party"))
+async def party(_, m: Message):
+    if m.chat.type.name not in ("GROUP", "SUPERGROUP"):
+        await m.reply("❌ Group mein use karo!")
+        return
+    group_id = m.chat.id
+    if db.get_group_setting(group_id, "party_mode"):
+        await m.reply("🎉 **Party already active!**\nAdd songs: `/addsong [song]`\nQueue: `/partyqueue`\nSkip: `/skipparty`\nStop: `/stopparty`")
+        return
+    db.set_group_setting(group_id, "party_mode", 1)
+    db.set_group_setting(group_id, "party_host", m.from_user.id)
+    db.clear_party_queue(group_id)
+    await m.reply(f"🎉 **Party Mode Activated!**\n\n"
+                  f"🎵 Host: **{m.from_user.first_name}**\n\n"
+                  f"Add songs to the queue:\n`/addsong Tum Hi Ho`\n`/addsong Kesariya`\n\n"
+                  f"📋 `/partyqueue` — See queue\n"
+                  f"⏭ `/skipparty` — Skip current\n"
+                  f"🛑 `/stopparty` — End party\n\n"
+                  f"Let's go! 🔥🎵")
+
+@app.on_message(filters.command("partyqueue"))
+async def partyqueue(_, m: Message):
+    if m.chat.type.name not in ("GROUP", "SUPERGROUP"):
+        await m.reply("❌ Group mein use karo!")
+        return
+    queue = db.get_party_queue(m.chat.id)
+    if not queue:
+        await m.reply("📋 **Queue empty!**\nAdd songs: `/addsong [song]`")
+        return
+    text = f"📋 **Party Queue ({len(queue)} songs):**\n\n"
+    for i, item in enumerate(queue, 1):
+        text += f"{i}. **{item['song']}** — by {item['user_name']}\n"
+    await m.reply(text)
 
 @app.on_message(filters.command("ping"))
 async def ping(_, m: Message):
     start = datetime.datetime.now()
     msg = await m.reply("🏓 **Pinging...**")
-    end = datetime.datetime.now()
-    latency = (end - start).microseconds // 1000
-    await msg.edit(f"🏓 **Pong!**\n\n⚡ Latency: **{latency}ms**\n🤖 Bot: {BOT_NAME}\n✅ Status: Online")
+    latency = (datetime.datetime.now() - start).microseconds // 1000
+    await msg.edit(f"🏓 **Pong!**\n\n⚡ Latency: **{latency}ms**\n✅ Status: Online")
 
 @app.on_message(filters.command("play"))
 async def play_cs(_, m: Message):
@@ -1357,7 +1569,7 @@ async def preview(_, m: Message):
         preview_url = song.get("previewUrl") or song["downloadUrl"][0]["link"]
         title, artist = song["name"], song["primaryArtists"]
         await msg.edit(f"⬇️ **Downloading preview:** `{title}`...")
-        path = download_song(preview_url, f"preview_{title}")
+        path = download_song_file(preview_url, f"preview_{title}")
         await app.send_audio(m.chat.id, path, caption=f"🎵 **Preview:** {title} - {artist}", title=f"Preview - {title}")
         await msg.delete()
         try: os.remove(path)
@@ -1371,22 +1583,23 @@ async def profile(_, m: Message):
     db.ensure_user(user_id, m.from_user.first_name)
     user = db.get_user(user_id)
     downloads = user["downloads"]
+    xp = user.get("xp", 0)
+    level = user.get("level", 1)
     songs = db.get_history(user_id, 50)
     most = max(set(songs), key=songs.count) if songs else "None"
     badge_list = get_badges(user_id)
-    await m.reply(
-        f"👤 **{m.from_user.first_name}'s Profile**\n\n"
-        f"📅 Since: {user.get('joined', 'Unknown')}\n"
-        f"📥 Downloads: {downloads}\n"
-        f"🎵 Top Song: {most}\n"
-        f"🎸 Genre: {get_user_genre_from_history(user_id)}\n"
-        f"⭐ Favorites: {db.count_favorites(user_id)}\n"
-        f"📜 History: {len(db.get_history(user_id))}\n"
-        f"🔥 Streak: {user.get('streak', 0)} days\n"
-        f"🔔 Subscribed: {'Yes ✅' if db.is_subscribed(user_id) else 'No ❌'}\n"
-        f"🏅 Level: {get_level(downloads)}\n\n"
-        f"**Badges:** {' '.join(badge_list[:3])}"
-    )
+    await m.reply(f"👤 **{m.from_user.first_name}'s Profile**\n\n"
+                  f"📅 Since: {user.get('joined', 'Unknown')}\n"
+                  f"📥 Downloads: {downloads}\n"
+                  f"🎵 Top Song: {most}\n"
+                  f"🎸 Genre: {get_user_genre_from_history(user_id)}\n"
+                  f"⭐ Favorites: {db.count_favorites(user_id)}\n"
+                  f"🔥 Streak: {user.get('streak', 0)} days\n"
+                  f"✨ XP: {xp}\n"
+                  f"{get_xp_bar(xp)}\n"
+                  f"🎖 Level: {level} — {get_level_title(level)}\n"
+                  f"🔔 Subscribed: {'Yes ✅' if db.is_subscribed(user_id) else 'No ❌'}\n\n"
+                  f"**Badges:**\n" + "\n".join(f"• {b}" for b in badge_list))
 
 @app.on_message(filters.command("punjabi"))
 async def punjabi(_, m: Message):
@@ -1412,7 +1625,7 @@ async def quality_select(_, m: Message):
         InlineKeyboardButton("🎵 192 kbps", callback_data=f"qual_192_{song[:30]}"),
         InlineKeyboardButton("🎵 320 kbps", callback_data=f"qual_320_{song[:30]}"),
     ]])
-    await m.reply(f"🎧 **Select Quality:**\n`{song}`\n\n128kbps — Saves data 📶\n192kbps — Balanced ⚖️\n320kbps — Best quality 🎵", reply_markup=keyboard)
+    await m.reply(f"🎧 **Select Quality:**\n`{song}`\n\n128kbps — Data saver 📶\n192kbps — Balanced ⚖️\n320kbps — Best quality 🎵", reply_markup=keyboard)
 
 @app.on_message(filters.command("quote"))
 async def quote(_, m: Message):
@@ -1423,7 +1636,7 @@ async def quote(_, m: Message):
 
 @app.on_message(filters.command("random"))
 async def random_song(_, m: Message):
-    keywords = ["hindi popular 2024", "bollywood hits", "top songs india", "english hits", "punjabi popular", "romantic songs", "party songs hindi"]
+    keywords = ["hindi popular 2024", "bollywood hits", "top songs india", "english hits", "punjabi popular", "romantic songs"]
     msg = await m.reply("🎲 **Fetching random song...**")
     results = search_jiosaavn_multiple(random.choice(keywords), 20)
     if not results:
@@ -1451,10 +1664,10 @@ async def rate(_, m: Message):
 async def recommend(_, m: Message):
     user_id = m.from_user.id
     msg = await m.reply("🎯 **Finding recommendations...**")
-    if user_id in history and history[user_id]:
-        last = history[user_id][0]
-        results = search_jiosaavn_multiple(f"songs like {last}", 5)
-        text = "🎯 **Based on Your History:**\n\n"
+    hist = db.get_history(user_id, 1)
+    if hist:
+        results = search_jiosaavn_multiple(f"songs like {hist[0]}", 5)
+        text = f"🎧 **Because you downloaded** `{hist[0]}`:\n\n**Recommended:**\n"
     else:
         results = search_jiosaavn_multiple("best hindi songs popular", 5)
         text = "🎯 **Recommended for You:**\n\n"
@@ -1462,7 +1675,7 @@ async def recommend(_, m: Message):
         await msg.edit("❌ Could not fetch!")
         return
     for i, s in enumerate(results, 1):
-        text += f"{i}. **{s['name']}** - {s['primaryArtists']}\n"
+        text += f"• **{s['name']}** - {s['primaryArtists']}\n"
     text += "\n📥 `/download [song name]`"
     await msg.edit(text)
 
@@ -1470,7 +1683,7 @@ async def recommend(_, m: Message):
 async def regional(_, m: Message):
     parts = m.text.split(None, 1)
     if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
-        await m.reply("🌍 **Choose:**\n`/regional marathi` `/regional tamil` `/regional telugu`\n`/regional bhojpuri` `/regional bengali` `/regional gujarati`\n`/regional kannada` `/regional malayalam`")
+        await m.reply("🌍 **Choose:**\n`/regional marathi` `/regional tamil` `/regional telugu`\n`/regional bhojpuri` `/regional bengali` `/regional gujarati`")
         return
     lang = parts[1].strip().lower()
     msg = await m.reply(f"🌍 **Fetching {lang} songs...**")
@@ -1515,11 +1728,22 @@ async def removefav(_, m: Message):
     if len(parts) < 2 or not parts[1].strip() or parts[1].strip().lower() in PLACEHOLDERS:
         await m.reply("❌ Example: `/removefav Tum Hi Ho`")
         return
-    query = parts[1].strip()
-    if db.remove_favorite(m.from_user.id, query):
-        await m.reply(f"🗑 **Removed:** `{query}`")
+    if db.remove_favorite(m.from_user.id, parts[1].strip()):
+        await m.reply(f"🗑 **Removed:** `{parts[1].strip()}`")
     else:
         await m.reply("❌ Not in favorites!")
+
+@app.on_message(filters.command("requestsong"))
+async def requestsong(_, m: Message):
+    if m.chat.type.name not in ("GROUP", "SUPERGROUP"):
+        await m.reply("❌ Group mein use karo!")
+        return
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip():
+        await m.reply("❌ Example: `/requestsong Tum Hi Ho`")
+        return
+    song = parts[1].strip()
+    await m.reply(f"🎵 **Song Request!**\n\n🎶 `{song}`\n👤 Requested by: **{m.from_user.first_name}**\n\n📥 `/download {song}` to download!")
 
 # S
 
@@ -1557,9 +1781,33 @@ async def search(_, m: Message):
     text = f"🔍 **Results for:** `{query}`\n\n"
     for i, song in enumerate(results, 1):
         d = int(song["duration"])
-        text += f"{i}. **{song['name']}**\n   👤 {song['primaryArtists']} | ⏱ {d//60}:{d%60:02d}\n\n"
-    text += "📥 `/download [song name]`"
-    await msg.edit(text)
+        keyboard_row = [
+            InlineKeyboardButton("📥", callback_data=f"dl_{song['name'][:30]}"),
+            InlineKeyboardButton("🎤", callback_data=f"lyr_{song['name'][:35]}"),
+            InlineKeyboardButton("🎵", callback_data=f"sim_{song['name'][:40]}"),
+        ]
+        text += f"{i}. **{song['name']}** — {song['primaryArtists']} | ⏱ {d//60}:{d%60:02d}\n"
+    text += "\n📥 Tap buttons below or `/download [name]`"
+    # Inline buttons for top result
+    top = results[0]
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("📥 Download", callback_data=f"dl_{top['name'][:30]}"),
+        InlineKeyboardButton("📝 Lyrics", callback_data=f"lyr_{top['name'][:35]}"),
+        InlineKeyboardButton("🎵 Similar", callback_data=f"sim_{top['name'][:40]}"),
+        InlineKeyboardButton("▶️ Preview", callback_data=f"none"),
+    ]])
+    await msg.edit(text, reply_markup=keyboard)
+
+@app.on_message(filters.command("secret"))
+async def secret(_, m: Message):
+    secrets = [
+        "🔮 **Secret #1:** Type `/musicfact` for hidden music knowledge!",
+        "🤫 **Secret #2:** Your streak gives you bonus XP! Try `/dailyreward`",
+        "🔮 **Secret #3:** Rate songs with `/rate` to earn XP!",
+        "🤫 **Secret #4:** Try `/party` in a group for the ultimate experience!",
+        "🔮 **Secret #5:** `/easteregg` has more secrets hidden inside! 🥚",
+    ]
+    await m.reply(random.choice(secrets))
 
 @app.on_message(filters.command("share"))
 async def share(_, m: Message):
@@ -1568,25 +1816,19 @@ async def share(_, m: Message):
         await m.reply("❌ Example: `/share Tum Hi Ho`")
         return
     query = parts[1].strip()
-    msg = await m.reply(f"📤 **Creating share card...**")
+    msg = await m.reply("📤 **Creating share card...**")
     dl_url, title, duration, song_data = search_jiosaavn(query)
     if not song_data:
         await msg.edit("❌ Song not found!")
         return
     mins, secs = duration // 60, duration % 60
-    g_stats = db.get_song_global_stats(song_data['name'])
     avg_rating, _ = db.get_avg_rating(song_data['name'][:25])
-    share_text = (
-        f"🎵 **{song_data['name']}**\n"
-        f"👤 Artist: {song_data['primaryArtists']}\n"
-        f"💿 Album: {song_data.get('album',{}).get('name','Unknown')}\n"
-        f"⏱ Duration: {mins}:{secs:02d}\n"
-        f"📅 Year: {song_data.get('year','Unknown')}\n"
-        f"⭐ Rating: {avg_rating:.1f}/5\n\n"
-        f"🎧 Download from **{BOT_NAME}**\n"
-        f"👉 {BOT_USERNAME}"
-    )
-    await msg.edit(share_text)
+    await msg.edit(f"🎵 **{song_data['name']}**\n"
+                   f"👤 Artist: {song_data['primaryArtists']}\n"
+                   f"💿 Album: {song_data.get('album',{}).get('name','Unknown')}\n"
+                   f"⏱ Duration: {mins}:{secs:02d} | 📅 {song_data.get('year','Unknown')}\n"
+                   f"⭐ Rating: {avg_rating:.1f}/5\n\n"
+                   f"🎧 Download from **{BOT_NAME}**\n👉 {BOT_USERNAME}")
 
 @app.on_message(filters.command("short"))
 async def short(_, m: Message):
@@ -1663,6 +1905,52 @@ async def skip(_, m: Message):
     quiz = active_quiz.pop(chat_id)
     await m.reply(f"⏭ **Skipped!**\nAnswer: **{quiz['title']}** by {quiz['artist']}")
 
+@app.on_message(filters.command("skipparty"))
+async def skipparty(_, m: Message):
+    if m.chat.type.name not in ("GROUP", "SUPERGROUP"):
+        await m.reply("❌ Group mein use karo!")
+        return
+    group_id = m.chat.id
+    if not db.get_group_setting(group_id, "party_mode"):
+        await m.reply("❌ Party mode active nahi hai!")
+        return
+    next_song = db.pop_party_queue(group_id)
+    if not next_song:
+        await m.reply("📋 **Queue empty!**\nAdd songs: `/addsong [song]`")
+        return
+    msg = await m.reply(f"⏭ **Playing next:**\n🎵 `{next_song['song']}`\n👤 Added by: {next_song['user_name']}")
+    await send_song(m, next_song["song"], msg)
+
+@app.on_message(filters.command("songbattle"))
+async def songbattle(_, m: Message):
+    if m.chat.type.name not in ("GROUP", "SUPERGROUP"):
+        await m.reply("❌ Group mein use karo!")
+        return
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or "|" not in parts[1]:
+        await m.reply("❌ Format: `/songbattle Song1 | Song2`\nExample: `/songbattle Husn | Kesariya`")
+        return
+    songs = parts[1].split("|")
+    if len(songs) != 2:
+        await m.reply("❌ 2 songs likho `|` se alag karke!")
+        return
+    s1, s2 = songs[0].strip(), songs[1].strip()
+    group_id = m.chat.id
+    group_votes[group_id] = {"songs": [s1, s2], "votes": {}, "active": True}
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton(f"🎵 {s1[:20]}", callback_data=f"vote_{group_id}_0"),
+        InlineKeyboardButton(f"🎵 {s2[:20]}", callback_data=f"vote_{group_id}_1"),
+    ]])
+    msg = await m.reply(f"⚔️ **Song Battle!**\n\n🎵 **{s1}**\n  VS\n🎵 **{s2}**\n\nVote karo! ⏱ 30 seconds!", reply_markup=keyboard)
+    await asyncio.sleep(30)
+    if group_id in group_votes and group_votes[group_id].get("active"):
+        votes = group_votes[group_id]["votes"]
+        v0 = sum(1 for v in votes.values() if v == 0)
+        v1 = sum(1 for v in votes.values() if v == 1)
+        winner = s1 if v0 >= v1 else s2
+        del group_votes[group_id]
+        await m.reply(f"🏆 **Battle Result!**\n\n🎵 **{s1}**: {v0} votes\n🎵 **{s2}**: {v1} votes\n\n👑 **Winner: {winner}!**\n\n📥 `/download {winner}`")
+
 @app.on_message(filters.command("songstats"))
 async def songstats(_, m: Message):
     parts = m.text.split(None, 1)
@@ -1678,15 +1966,15 @@ async def songstats(_, m: Message):
     song_name = song_data['name']
     g_stats = db.get_song_global_stats(song_name)
     avg_rating, vote_count = db.get_avg_rating(song_name[:25])
-    await msg.edit(
-        f"📊 **{song_name}**\n\n"
-        f"👤 {song_data['primaryArtists']}\n"
-        f"💿 {song_data.get('album',{}).get('name','Unknown')} | 📅 {song_data.get('year','Unknown')}\n\n"
-        f"📥 **Bot Downloads:** {g_stats['downloads']}\n"
-        f"⭐ **Favorites:** {g_stats['favorites']}\n"
-        f"🌟 **Rating:** {'⭐ ' + f'{avg_rating:.1f}/5 ({vote_count} votes)' if vote_count > 0 else 'Not rated yet'}\n\n"
-        f"📥 `/download {song_name}`"
-    )
+    reactions = db.get_song_reactions(song_name[:25])
+    await msg.edit(f"📊 **{song_name}**\n\n"
+                   f"👤 {song_data['primaryArtists']}\n"
+                   f"💿 {song_data.get('album',{}).get('name','Unknown')} | 📅 {song_data.get('year','Unknown')}\n\n"
+                   f"📥 **Bot Downloads:** {g_stats['downloads']}\n"
+                   f"⭐ **Favorites:** {g_stats['favorites']}\n"
+                   f"🌟 **Rating:** {'⭐ ' + f'{avg_rating:.1f}/5 ({vote_count} votes)' if vote_count > 0 else 'Not rated yet'}\n"
+                   f"👍 Likes: {reactions.get('like',0)} | 🔥 Fire: {reactions.get('fire',0)} | 💔 Sad: {reactions.get('sad',0)}\n\n"
+                   f"📥 `/download {song_name}`")
 
 @app.on_message(filters.command("start"))
 async def start(_, m: Message):
@@ -1699,24 +1987,21 @@ async def start(_, m: Message):
          InlineKeyboardButton("👤 My Account", callback_data="help_account")],
         [InlineKeyboardButton("📊 Stats & Info", callback_data="help_stats")]
     ])
-    await m.reply(
-        f"🎵 **Welcome to {BOT_NAME}!**\n"
-        f"Hello {m.from_user.first_name}! 👋\n\n"
-        f"🤖 Your ultimate music companion!\n"
-        f"Search, download, discover & play!\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"🚀 **Quick Start:**\n"
-        f"📥 `/download Tum Hi Ho`\n"
-        f"🔍 `/search Arijit Singh`\n"
-        f"🎭 `/mood happy`\n"
-        f"🌍 `/trending`\n"
-        f"🎮 `/guesssong`\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"📋 **Browse all commands below** 👇\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"⚠️ **Bug/Issue?** Contact: {DEVELOPER}",
-        reply_markup=keyboard
-    )
+    await m.reply(f"🎵 **Welcome to {BOT_NAME}!**\n"
+                  f"Hello {m.from_user.first_name}! 👋\n\n"
+                  f"🤖 Your ultimate music companion!\n\n"
+                  f"━━━━━━━━━━━━━━━━━━━━\n"
+                  f"🚀 **Quick Start:**\n"
+                  f"📥 `/download Tum Hi Ho`\n"
+                  f"🔍 `/search Arijit Singh`\n"
+                  f"🎭 `/mood happy`\n"
+                  f"🎮 `/guesssong`\n"
+                  f"🎁 `/dailyreward` — Free XP!\n\n"
+                  f"━━━━━━━━━━━━━━━━━━━━\n"
+                  f"📋 **Browse commands below** 👇\n"
+                  f"━━━━━━━━━━━━━━━━━━━━\n\n"
+                  f"⚠️ **Bug/Issue?** Contact: {DEVELOPER}",
+                  reply_markup=keyboard)
 
 @app.on_message(filters.command("stats"))
 async def bot_stats(_, m: Message):
@@ -1724,37 +2009,46 @@ async def bot_stats(_, m: Message):
     uptime = datetime.datetime.now() - START_TIME
     hours = int(uptime.total_seconds() // 3600)
     mins = int((uptime.total_seconds() % 3600) // 60)
-    await m.reply(
-        f"📊 **{BOT_NAME} Statistics:**\n\n"
-        f"👥 Total Users: {db.get_total_users()}\n"
-        f"📥 Total Downloads: {db.get_total_downloads()}\n"
-        f"📅 Today's Downloads: {today_downloads['count']}\n"
-        f"⭐ Rated Songs: {db.get_total_users()}\n"
-        f"🔔 Subscribers: {len(db.get_subscribers())}\n"
-        f"⏰ Uptime: {hours}h {mins}m\n"
-        f"🎵 Database: JioSaavn\n\n"
-        f"🔜 Voice Chat: Coming Soon!\n"
-        f"⚠️ Issues? Contact: {DEVELOPER}"
-    )
+    await m.reply(f"📊 **{BOT_NAME} Statistics:**\n\n"
+                  f"👥 Total Users: {db.get_total_users()}\n"
+                  f"📥 Total Downloads: {db.get_total_downloads()}\n"
+                  f"📅 Today: {today_downloads['count']}\n"
+                  f"🔔 Subscribers: {len(db.get_subscribers())}\n"
+                  f"⏰ Uptime: {hours}h {mins}m\n"
+                  f"🎵 Database: JioSaavn + SQLite\n\n"
+                  f"⚠️ Issues? Contact: {DEVELOPER}")
+
+@app.on_message(filters.command("stopparty"))
+async def stopparty(_, m: Message):
+    if m.chat.type.name not in ("GROUP", "SUPERGROUP"):
+        await m.reply("❌ Group mein use karo!")
+        return
+    group_id = m.chat.id
+    host = db.get_group_setting(group_id, "party_host")
+    if host and host != m.from_user.id:
+        await m.reply("❌ Sirf party host stop kar sakta hai!")
+        return
+    db.set_group_setting(group_id, "party_mode", 0)
+    db.clear_party_queue(group_id)
+    await m.reply("🛑 **Party Mode Stopped!**\n\nThanks for the party! 🎉\nPhir milenge! 🎵")
 
 @app.on_message(filters.command("streak"))
 async def streak(_, m: Message):
     user_id = m.from_user.id
+    db.ensure_user(user_id, m.from_user.first_name)
     u = db.get_user(user_id)
-    current_streak = u['streak'] if u else 0
+    current_streak = u["streak"] if u else 0
     if current_streak == 0:
-        await m.reply(f"🔥 **Streak: 0 days**\n\nDownload a song today to start your streak!")
+        await m.reply("🔥 **Streak: 0 days**\n\nDownload a song today to start! 🎵\n🎁 `/dailyreward` — Claim free XP!")
         return
     if current_streak >= 30: emoji = "👑"
     elif current_streak >= 7: emoji = "⚡"
     elif current_streak >= 3: emoji = "🔥"
     else: emoji = "✨"
-    await m.reply(
-        f"{emoji} **{m.from_user.first_name}'s Streak:**\n\n"
-        f"🔥 **{current_streak} day streak!**\n\n"
-        f"{'👑 Legendary streak!' if current_streak >= 30 else '⚡ Week streak! Amazing!' if current_streak >= 7 else '🔥 3 days! Keep going!' if current_streak >= 3 else '✨ Good start! Keep going!'}\n\n"
-        f"📥 Download daily to keep it going!"
-    )
+    await m.reply(f"{emoji} **{m.from_user.first_name}'s Streak:**\n\n"
+                  f"🔥 **{current_streak} day streak!**\n\n"
+                  f"{'👑 Legendary!' if current_streak >= 30 else '⚡ Week streak! Amazing!' if current_streak >= 7 else '🔥 3 days! Keep going!' if current_streak >= 3 else '✨ Good start!'}\n\n"
+                  f"📥 Download daily to keep it going!")
 
 @app.on_message(filters.command("subscribe"))
 async def subscribe(_, m: Message):
@@ -1764,19 +2058,17 @@ async def subscribe(_, m: Message):
         return
     db.ensure_user(user_id, m.from_user.first_name)
     db.set_subscribed(user_id, True)
-    await m.reply("🔔 **Subscribed!**\n\nYou'll receive a daily song every morning at 9 AM!\nUse `/unsubscribe` to stop anytime.")
+    await m.reply("🔔 **Subscribed!**\n\nHar roz subah 9 AM par ek song milega!\nUse `/unsubscribe` to stop.")
 
 # T
 
 @app.on_message(filters.command("todaystats"))
 async def todaystats(_, m: Message):
     update_today_stats()
-    await m.reply(
-        f"📅 **Today's Stats:**\n\n"
-        f"📥 Downloads Today: {stats['today_downloads']}\n"
-        f"👥 Total Users: {len(stats['users'])}\n"
-        f"📊 Date: {datetime.date.today().strftime('%d %b %Y')}"
-    )
+    await m.reply(f"📅 **Today's Stats:**\n\n"
+                  f"📥 Downloads Today: {today_downloads['count']}\n"
+                  f"👥 Total Users: {db.get_total_users()}\n"
+                  f"📊 Date: {datetime.date.today().strftime('%d %b %Y')}")
 
 @app.on_message(filters.command("topartist"))
 async def topartist(_, m: Message):
@@ -1785,7 +2077,7 @@ async def topartist(_, m: Message):
         await m.reply("❌ Example: `/topartist Arijit Singh`")
         return
     query = parts[1].strip()
-    msg = await m.reply(f"🏆 **Fetching top songs by:** `{query}`...")
+    msg = await m.reply(f"🏆 **Top songs by:** `{query}`...")
     results = search_jiosaavn_multiple(f"best of {query}", 8)
     if not results:
         await msg.edit("❌ No results!")
@@ -1840,6 +2132,19 @@ async def topsongs(_, m: Message):
         text += f"{i}. **{row['song']}** — ⭐ {row['avg_r']:.1f}/5 ({row['cnt']} votes)\n"
     await m.reply(text)
 
+@app.on_message(filters.command("topuser"))
+async def topuser(_, m: Message):
+    if m.chat.type.name not in ("GROUP", "SUPERGROUP"):
+        await m.reply("❌ Group mein use karo!")
+        return
+    top = db.get_group_leaderboard(m.chat.id, 1)
+    if not top:
+        await m.reply("❌ No downloads in this group yet!")
+        return
+    await m.reply(f"🥇 **Top User in {m.chat.title}:**\n\n"
+                  f"👤 **{top[0]['user_name']}**\n📥 Downloads: {top[0]['downloads']}\n\n"
+                  f"🏆 `/gleaderboard` — Full ranking")
+
 @app.on_message(filters.command("top2025"))
 async def top2025(_, m: Message):
     msg = await m.reply("🔥 **Fetching Top 2025...**")
@@ -1864,22 +2169,19 @@ async def tournament(_, m: Message):
         await msg.edit("❌ Could not fetch songs!")
         return
     songs = [s["name"] for s in results[:8]]
-    text = "🏆 **Song Tournament!**\n\n"
-    text += "**🎵 Today's Contestants:**\n\n"
+    text = "🏆 **Song Tournament!**\n\n**🎵 Contestants:**\n\n"
     for i, s in enumerate(songs, 1):
         text += f"{i}. {s}\n"
-    text += "\n**Vote:** Reply with the number of your favourite song!\n"
-    text += f"Who should win? 🎵"
+    text += "\n**Vote with the number of your favourite!** 🎵"
     await msg.edit(text)
 
 @app.on_message(filters.command("trendingartist"))
 async def trendingartist(_, m: Message):
     msg = await m.reply("🔥 **Fetching Trending Artists...**")
     results = []
-    for q in ["trending hindi 2024", "popular bollywood 2024", "viral songs 2024", "top india 2024"]:
+    for q in ["trending hindi 2024", "popular bollywood 2024", "viral songs 2024"]:
         results += search_jiosaavn_multiple(q, 5)
-    artists = []
-    seen_artists = set()
+    artists, seen_artists = [], set()
     for s in results:
         for a in s.get("primaryArtists", "").split(","):
             a = a.strip()
@@ -1927,19 +2229,11 @@ async def unsubscribe(_, m: Message):
 
 @app.on_message(filters.command("uptime"))
 async def uptime(_, m: Message):
-    uptime_delta = datetime.datetime.now() - START_TIME
-    total_seconds = int(uptime_delta.total_seconds())
-    days = total_seconds // 86400
-    hours = (total_seconds % 86400) // 3600
-    mins = (total_seconds % 3600) // 60
-    secs = total_seconds % 60
-    await m.reply(
-        f"⏰ **{BOT_NAME} Uptime:**\n\n"
-        f"🕐 **{days}d {hours}h {mins}m {secs}s**\n\n"
-        f"✅ Status: Online\n"
-        f"🎵 Database: JioSaavn\n"
-        f"🤖 Bot: {BOT_USERNAME}"
-    )
+    delta = datetime.datetime.now() - START_TIME
+    total = int(delta.total_seconds())
+    days, hours = total // 86400, (total % 86400) // 3600
+    mins, secs = (total % 3600) // 60, total % 60
+    await m.reply(f"⏰ **{BOT_NAME} Uptime:**\n\n🕐 **{days}d {hours}h {mins}m {secs}s**\n\n✅ Status: Online\n🤖 Bot: {BOT_USERNAME}")
 
 # V
 
@@ -1971,13 +2265,48 @@ async def vibe(_, m: Message):
         vibe_r, desc = "⚡ Short & Punchy", "Short but powerful!"
     else:
         vibe_r, desc = "😌 Chill / Neutral", "Good for any time!"
-    await msg.edit(
-        f"🎭 **Vibe Analysis:**\n\n"
-        f"🎵 **{song_data['name']}**\n"
-        f"👤 {song_data['primaryArtists']}\n"
-        f"⏱ {mins}:{secs:02d} | 🌐 {song_data.get('language','Unknown').capitalize()}\n\n"
-        f"**Vibe:** {vibe_r}\n📝 {desc}"
-    )
+    await msg.edit(f"🎭 **Vibe Analysis:**\n\n🎵 **{song_data['name']}**\n"
+                   f"👤 {song_data['primaryArtists']}\n"
+                   f"⏱ {mins}:{secs:02d} | 🌐 {song_data.get('language','Unknown').capitalize()}\n\n"
+                   f"**Vibe:** {vibe_r}\n📝 {desc}")
+
+@app.on_message(filters.command("votesong"))
+async def votesong(_, m: Message):
+    if m.chat.type.name not in ("GROUP", "SUPERGROUP"):
+        await m.reply("❌ Group mein use karo!")
+        return
+    msg = await m.reply("📊 **Creating Song Vote...**")
+    results = search_jiosaavn_multiple("popular hindi songs", 10)
+    if not results:
+        await msg.edit("❌ Could not fetch!")
+        return
+    songs = random.sample(results, min(4, len(results)))
+    group_id = m.chat.id
+    group_votes[group_id] = {"songs": [s["name"] for s in songs], "votes": {}, "active": True}
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"🎵 {songs[0]['name'][:20]}", callback_data=f"vote_{group_id}_0"),
+         InlineKeyboardButton(f"🎵 {songs[1]['name'][:20]}", callback_data=f"vote_{group_id}_1")],
+        [InlineKeyboardButton(f"🎵 {songs[2]['name'][:20]}", callback_data=f"vote_{group_id}_2"),
+         InlineKeyboardButton(f"🎵 {songs[3]['name'][:20]}", callback_data=f"vote_{group_id}_3")] if len(songs) > 3 else []
+    ])
+    text = "📊 **Group Song Vote!**\n\nKaunsa song download karein?\n\n"
+    for i, s in enumerate(songs, 1):
+        text += f"{i}. {s['name']}\n"
+    text += "\n⏱ 30 seconds!"
+    await msg.edit(text, reply_markup=keyboard)
+    await asyncio.sleep(30)
+    if group_id in group_votes and group_votes[group_id].get("active"):
+        votes = group_votes[group_id]["votes"]
+        song_names = group_votes[group_id]["songs"]
+        counts = [sum(1 for v in votes.values() if v == i) for i in range(len(song_names))]
+        winner_idx = counts.index(max(counts))
+        winner = song_names[winner_idx]
+        del group_votes[group_id]
+        result_text = "📊 **Vote Result!**\n\n"
+        for i, (s, c) in enumerate(zip(song_names, counts)):
+            result_text += f"{'👑 ' if i == winner_idx else '  '}**{s}**: {c} votes\n"
+        result_text += f"\n🏆 **Winner: {winner}!**\n📥 `/download {winner}`"
+        await m.reply(result_text)
 
 # W
 
@@ -2005,7 +2334,7 @@ async def year_cmd(_, m: Message):
         return
     year = parts[1].strip()
     if not year.isdigit() or not (1990 <= int(year) <= 2025):
-        await m.reply("❌ Valid year likho (1990-2025)!\nExample: `/year 2005`")
+        await m.reply("❌ Valid year likho (1990-2025)!")
         return
     msg = await m.reply(f"📅 **Fetching songs from {year}...**")
     results = search_jiosaavn_multiple(f"hindi songs {year} hits", 8)
@@ -2023,22 +2352,15 @@ async def yeargame(_, m: Message):
     msg = await m.reply("📅 **Preparing Year Game...**")
     chat_id = m.chat.id
     results = search_jiosaavn_multiple("popular hindi songs hits", 15)
-    songs_with_year = [s for s in results if s.get("year", "").isdigit()]
+    songs_with_year = [s for s in results if str(s.get("year", "")).isdigit()]
     if not songs_with_year:
         await msg.edit("❌ Could not fetch! Try again.")
         return
     song = random.choice(songs_with_year)
-    title = song["name"]
-    artist = song["primaryArtists"]
-    correct_year = song["year"]
+    title, artist, correct_year = song["name"], song["primaryArtists"], song["year"]
     active_quiz[chat_id] = {"answer": correct_year, "title": title, "artist": artist, "type": "yeargame"}
-    await msg.edit(
-        f"📅 **Year Guess Game!**\n\n"
-        f"🎵 **Song:** {title}\n"
-        f"👤 **Artist:** {artist}\n\n"
-        f"❓ **Which year was this released?**\n\n"
-        f"💭 Reply with the year!\n⏱ 20 seconds!\nUse `/skip` to skip."
-    )
+    await msg.edit(f"📅 **Year Guess Game!**\n\n🎵 **Song:** {title}\n👤 **Artist:** {artist}\n\n"
+                   f"❓ **Which year was this released?**\n\n💭 Reply with the year!\n⏱ 20 seconds!")
     await asyncio.sleep(20)
     if chat_id in active_quiz and active_quiz[chat_id].get("type") == "yeargame":
         del active_quiz[chat_id]
@@ -2062,33 +2384,49 @@ async def quiz_check(_, m: Message):
             selected = quiz["options"][option_map[user_ans]]
             if selected.lower() == correct:
                 del active_quiz[chat_id]
-                await m.reply(f"✅ **Correct! {m.from_user.first_name}!** 🎉\n🎵 **{quiz['title']}** by {quiz['artist']}\n\n📥 `/download {quiz['title']}`")
+                db.ensure_user(m.from_user.id, m.from_user.first_name)
+                db.add_xp(m.from_user.id, XP_REWARDS["quiz_win"])
+                await m.reply(f"✅ **Correct! {m.from_user.first_name}!** 🎉\n"
+                              f"🎵 **{quiz['title']}** by {quiz['artist']}\n"
+                              f"✨ **+{XP_REWARDS['quiz_win']} XP earned!**\n\n"
+                              f"📥 `/download {quiz['title']}`")
             else:
-                await m.reply(f"❌ **Wrong!** Try again!\n💡 Hint: Starts with **{quiz['title'][0]}**")
+                await m.reply(f"❌ **Wrong!** Try again!\n💡 Starts with **{quiz['title'][0]}**")
 
     elif quiz_type == "fillblank":
         if user_ans == correct or correct in user_ans:
             del active_quiz[chat_id]
-            await m.reply(f"✅ **Correct! {m.from_user.first_name}!** 🎉\nThe word was: **{correct}**\n🎵 **{quiz['title']}** by {quiz['artist']}")
+            db.ensure_user(m.from_user.id, m.from_user.first_name)
+            db.add_xp(m.from_user.id, XP_REWARDS["quiz_win"])
+            await m.reply(f"✅ **Correct! {m.from_user.first_name}!** 🎉\n"
+                          f"Word: **{correct}** | Song: **{quiz['title']}**\n"
+                          f"✨ **+{XP_REWARDS['quiz_win']} XP!**")
         else:
-            await m.reply(f"❌ **Wrong!** Try again!\n💡 Hint: Starts with **{correct[0]}**")
+            await m.reply(f"❌ **Wrong!** Starts with **{correct[0]}**")
 
     elif quiz_type == "yeargame":
-        if user_ans == correct or user_ans in correct:
+        if user_ans == correct:
             del active_quiz[chat_id]
-            await m.reply(f"✅ **Correct! {m.from_user.first_name}!** 🎉\nYear: **{correct}**\n🎵 **{quiz['title']}** by {quiz['artist']}")
+            db.ensure_user(m.from_user.id, m.from_user.first_name)
+            db.add_xp(m.from_user.id, XP_REWARDS["quiz_win"])
+            await m.reply(f"✅ **Correct! {m.from_user.first_name}!** 🎉\nYear: **{correct}**\n✨ **+{XP_REWARDS['quiz_win']} XP!**")
         else:
             try:
                 diff = abs(int(user_ans) - int(correct))
                 hint = "🔥 Very close!" if diff <= 2 else "📅 Try again!"
                 await m.reply(f"❌ **Wrong!** {hint}")
             except:
-                await m.reply("❌ **Wrong!** Reply with a year number.")
+                await m.reply("❌ Year number likho!")
 
     else:  # guess
         if any(w in user_ans for w in correct.split() if len(w) > 3):
             del active_quiz[chat_id]
-            await m.reply(f"✅ **Correct! {m.from_user.first_name}!** 🎉\n🎵 **{quiz['title']}** by {quiz['artist']}\n\n📥 `/download {quiz['title']}`")
+            db.ensure_user(m.from_user.id, m.from_user.first_name)
+            db.add_xp(m.from_user.id, XP_REWARDS["quiz_win"])
+            await m.reply(f"✅ **Correct! {m.from_user.first_name}!** 🎉\n"
+                          f"🎵 **{quiz['title']}** by {quiz['artist']}\n"
+                          f"✨ **+{XP_REWARDS['quiz_win']} XP!**\n\n"
+                          f"📥 `/download {quiz['title']}`")
 
 # ========== DAILY SONG TASK ==========
 
