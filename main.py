@@ -171,16 +171,32 @@ def download_song_file(url, title):
     os.makedirs("dl", exist_ok=True)
     safe = "".join(c for c in title if c.isalnum() or c in " -_")[:50]
     path = f"dl/{safe}.mp3"
-    r = requests.get(url, stream=True, timeout=60, headers={
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "*/*",
-        "Range": "bytes=0-",
-    })
-    r.raise_for_status()
-    with open(path, "wb") as f:
-        for chunk in r.iter_content(chunk_size=65536):
-            if chunk:
-                f.write(chunk)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "audio/mpeg, audio/*, */*",
+        "Accept-Encoding": "identity",
+        "Connection": "keep-alive",
+    }
+    # Try up to 3 times
+    for attempt in range(3):
+        try:
+            r = requests.get(url, stream=True, timeout=90,
+                           headers=headers, allow_redirects=True)
+            if r.status_code not in (200, 206):
+                raise Exception(f"HTTP {r.status_code}")
+            size = 0
+            with open(path, "wb") as f:
+                for chunk in r.iter_content(chunk_size=131072):
+                    if chunk:
+                        f.write(chunk)
+                        size += len(chunk)
+            if size < 10000:  # Less than 10KB = failed
+                raise Exception(f"File too small: {size} bytes")
+            return path
+        except Exception as e:
+            print(f"[download] Attempt {attempt+1} failed: {e}")
+            if attempt == 2:
+                raise Exception(f"Download failed after 3 tries: {e}")
     return path
 
 async def send_song(m, query, msg, quality="320"):
@@ -198,12 +214,31 @@ async def send_song(m, query, msg, quality="320"):
         await msg.edit(f"⬇️ **Downloading:** `{title}`...")
     except: pass
 
-    # Step 2: Actually download the file (non-blocking)
+    # Step 2: Download with timeout protection (120 sec max)
     try:
-        path = await asyncio.to_thread(download_song_file, dl_url, title)
-    except Exception as e:
-        await msg.edit(f"❌ Download failed: `{str(e)[:60]}`")
+        path = await asyncio.wait_for(
+            asyncio.to_thread(download_song_file, dl_url, title),
+            timeout=120
+        )
+    except asyncio.TimeoutError:
+        await msg.edit(f"❌ **Timeout!** Server slow hai.\n🔄 Dobara try karo: `/download {query}`")
         return
+    except Exception as e:
+        err = str(e)
+        # Try with alternate URL from different API
+        try:
+            await msg.edit(f"⚠️ First source failed, trying backup...")
+            song_alt = await asyncio.to_thread(apis.search_song_download, query, quality)
+            if song_alt and song_alt.get("download_url") and song_alt["download_url"] != dl_url:
+                path = await asyncio.wait_for(
+                    asyncio.to_thread(download_song_file, song_alt["download_url"], title),
+                    timeout=120
+                )
+            else:
+                raise Exception(err)
+        except Exception as e2:
+            await msg.edit(f"❌ **Download failed!**\n`{str(e2)[:80]}`\n\n🔄 Try: `/download {query}`")
+            return
 
     # Step 3: Update stats AFTER successful download
     update_today_stats()
