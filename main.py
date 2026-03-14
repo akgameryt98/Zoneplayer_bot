@@ -221,7 +221,6 @@ async def send_song(m, query, msg, quality="320"):
     if m.chat.type.name in ("GROUP", "SUPERGROUP"):
         db.update_group_stats(m.chat.id, user_id, m.from_user.first_name)
 
-    await msg.edit(f"📤 **Sending:** `{title}`...")
     album = song_data.get("album", {}).get("name", "Unknown") if song_data else "Unknown"
     year = song_data.get("year", "Unknown") if song_data else "Unknown"
 
@@ -235,40 +234,52 @@ async def send_song(m, query, msg, quality="320"):
          InlineKeyboardButton("💔 Sad", callback_data=f"react_sad_{title[:25]}")],
     ])
 
-    await app.send_audio(
-        m.chat.id, path,
-        caption=(f"🎵 **{title}**\n"
-                 f"💿 {album} | 📅 {year}\n"
-                 f"⏱ {mins}:{secs:02d} | 🎧 {quality}kbps\n"
-                 f"👤 {m.from_user.first_name}\n\n"
-                 f"🤖 {BOT_NAME} | {BOT_USERNAME}"),
-        title=title, duration=duration, reply_markup=reaction_keyboard
-    )
+    try:
+        await msg.edit("📤 **Sending...**")
+    except: pass
+
+    try:
+        await app.send_audio(
+            m.chat.id, path,
+            caption=(f"🎵 **{title}**\n"
+                     f"💿 {album} | 📅 {year}\n"
+                     f"⏱ {mins}:{secs:02d} | 🎧 {quality}kbps\n"
+                     f"👤 {m.from_user.first_name}\n\n"
+                     f"🤖 {BOT_NAME} | {BOT_USERNAME}"),
+            title=title, duration=duration, reply_markup=reaction_keyboard
+        )
+    except Exception as e:
+        await msg.edit(f"❌ Upload failed: `{str(e)[:50]}`")
+        try: os.remove(path)
+        except: pass
+        return
+
+    # Delete "Sending" message
     try:
         await msg.delete()
     except:
-        try:
-            await msg.edit("✅ Done!")
-        except:
-            pass
+        try: await msg.edit("✅")
+        except: pass
 
-    # XP notification
-    xp_msg = f"✨ **+{xp_earned} XP earned!**"
-    if is_first:
-        xp_msg = (f"🎉 **First Download Bonus!**\n\n"
-                  f"You earned **{xp_earned} XP** 🌟\n"
-                  f"🏅 Badge unlocked: **Music Explorer**\n"
-                  f"🎊 Welcome to BeatNova!")
-    streak_bonus = ""
+    # XP notification — sirf private chat mein, group mein spam nahi
+    is_group = m.chat.type.name in ("GROUP", "SUPERGROUP")
     user = db.get_user(user_id)
+    streak_bonus = ""
     if user and user["streak"] == 3:
         db.add_xp(user_id, XP_REWARDS["streak_3"])
-        streak_bonus = "\n🔥 **3-Day Streak! +20 XP bonus!**"
+        streak_bonus = " 🔥+20 streak bonus!"
     elif user and user["streak"] == 7:
         db.add_xp(user_id, XP_REWARDS["streak_7"])
-        streak_bonus = "\n⚡ **7-Day Streak! +50 XP bonus!**"
+        streak_bonus = " ⚡+50 streak bonus!"
 
-    await m.reply(f"{xp_msg}{streak_bonus}\n{get_xp_bar(total_xp)} | Level {new_level}")
+    if is_first:
+        xp_msg = (f"🎉 **First Download!** +{xp_earned} XP 🌟\n"
+                  f"🏅 Badge: **Music Explorer**{streak_bonus}")
+        await m.reply(xp_msg)
+    elif not is_group:
+        # Private chat mein XP show karo
+        await m.reply(f"✨ +{xp_earned} XP{streak_bonus} | {get_xp_bar(total_xp)} Lv.{new_level}")
+
     try: os.remove(path)
     except: pass
 
@@ -520,7 +531,8 @@ async def addsong(_, m: Message):
     song = parts[1].strip()
     db.add_to_party_queue(group_id, m.from_user.id, m.from_user.first_name, song)
     queue = db.get_party_queue(group_id)
-    await m.reply(f"✅ **Added to Party Queue!**\n\n🎵 `{song}`\n📋 Position: #{len(queue)}\n👤 Added by: {m.from_user.first_name}")
+    msg = await m.reply(f"✅ **Added to queue!** #{len(queue)}\n🎵 `{song}` — Downloading...")
+    await send_song(m, song, msg)
 
 @app.on_message(filters.command("ai_playlist"))
 async def ai_playlist(_, m: Message):
