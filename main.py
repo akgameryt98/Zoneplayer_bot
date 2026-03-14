@@ -182,18 +182,19 @@ async def send_song(m, query, msg, quality="320"):
         await msg.edit("❌ Song not found! Try a different name.")
         return
 
-    # Progress animation
-    for pct, bar in [("20%", "██░░░░░░░░"), ("50%", "█████░░░░░"), ("80%", "████████░░"), ("100%", "██████████")]:
-        try:
-            await msg.edit(f"⬇️ **Downloading...**\n`{bar}` {pct}")
-            await asyncio.sleep(0.4)
-        except: pass
-
-    path = download_song_file(dl_url, title)
     mins, secs = duration // 60, duration % 60
     user_id = m.from_user.id
     is_first = db.get_user(user_id) is None or db.get_user(user_id)["downloads"] == 0
 
+    # Step 1: Show downloading
+    try:
+        await msg.edit(f"⬇️ **Downloading:** `{title}`...")
+    except: pass
+
+    # Step 2: Actually download the file
+    path = download_song_file(dl_url, title)
+
+    # Step 3: Update stats AFTER successful download
     update_today_stats()
     today_downloads["count"] += 1
     db.increment_bot_stat("total_downloads")
