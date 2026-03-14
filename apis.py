@@ -77,75 +77,98 @@ def _saavn_old(query, limit=10):
         print(f"[saavn_old] Error: {e}")
         return []
 
+def _get_best_download_url(dl_urls, quality="320", key="url"):
+    """Pick best quality URL from downloadUrl list"""
+    if not dl_urls:
+        return None
+    # saavn.dev format: [{"quality":"96kbps","url":...}, ..., {"quality":"320kbps","url":...}]
+    # old format:       [{"quality":"96kbps","link":...}, ..., {"quality":"320kbps","link":...}]
+    q_target = f"{quality}kbps"
+    # Try to find exact quality match
+    for item in reversed(dl_urls):
+        if isinstance(item, dict):
+            item_q = item.get("quality", "")
+            item_url = item.get(key) or item.get("url") or item.get("link")
+            if item_q == q_target and item_url:
+                return item_url
+    # Fallback: just take highest quality (last item)
+    for item in reversed(dl_urls):
+        if isinstance(item, dict):
+            url = item.get(key) or item.get("url") or item.get("link")
+            if url:
+                return url
+    return None
+
 def _saavn_quality(query, quality="320", limit=10):
-    """JioSaavn with specific quality"""
+    """JioSaavn with specific quality - tries saavn.dev then old API"""
+    # Try saavn.dev first
     try:
         r = requests.get(
-            f"https://saavn.dev/api/search/songs",
+            "https://saavn.dev/api/search/songs",
             params={"query": query, "limit": limit},
             headers=HEADERS, timeout=TIMEOUT
         )
-        results = r.json().get("data", {}).get("results", [])
-        if not results:
-            # fallback
-            r2 = requests.get(
-                f"https://jiosaavn-api-privatecvc2.vercel.app/search/songs",
-                params={"query": query, "page": 1, "limit": limit},
-                headers=HEADERS, timeout=TIMEOUT
-            )
+        if r.status_code == 200:
+            results = r.json().get("data", {}).get("results", [])
+            if results:
+                s = results[0]
+                dl_urls = s.get("downloadUrl", [])
+                dl_url = _get_best_download_url(dl_urls, quality, "url")
+                if dl_url:
+                    print(f"[saavn.dev] Found: {s.get('name')} | URL: {dl_url[:60]}")
+                    return {
+                        "source": "jiosaavn",
+                        "name": s.get("name", "Unknown"),
+                        "artist": ", ".join(a["name"] for a in s.get("artists", {}).get("primary", [])) or "Unknown",
+                        "album": s.get("album", {}).get("name", "Unknown") if isinstance(s.get("album"), dict) else s.get("album", "Unknown"),
+                        "year": str(s.get("year", "Unknown")),
+                        "duration": int(s.get("duration", 0)),
+                        "language": s.get("language", "hindi").capitalize(),
+                        "download_url": dl_url,
+                        "preview_url": dl_url,
+                        "image": s.get("image", [{}])[-1].get("url", "") if s.get("image") else "",
+                        "id": s.get("id", ""),
+                        "quality": f"{quality}kbps",
+                    }
+    except Exception as e:
+        print(f"[saavn.dev] Error: {e}")
+
+    # Fallback: old JioSaavn API
+    try:
+        r2 = requests.get(
+            "https://jiosaavn-api-privatecvc2.vercel.app/search/songs",
+            params={"query": query, "page": 1, "limit": limit},
+            headers=HEADERS, timeout=TIMEOUT
+        )
+        if r2.status_code == 200:
             results_old = r2.json()["data"]["results"]
             if results_old:
                 s = results_old[0]
                 dl_urls = s.get("downloadUrl", [])
-                q_map = {"128": 0, "192": 1, "320": -1}
-                try:
-                    dl_url = dl_urls[q_map.get(quality, -1)]["link"]
-                except:
-                    dl_url = dl_urls[-1]["link"] if dl_urls else None
-                if not dl_url:
-                    return None
-                return {
-                    "source": "jiosaavn",
-                    "name": s.get("name", "Unknown"),
-                    "artist": s.get("primaryArtists", "Unknown"),
-                    "album": s.get("album", {}).get("name", "Unknown"),
-                    "year": s.get("year", "Unknown"),
-                    "duration": int(s.get("duration", 0)),
-                    "language": s.get("language", "hindi").capitalize(),
-                    "download_url": dl_url,
-                    "preview_url": dl_url,
-                    "image": "",
-                    "id": s.get("id", ""),
-                    "quality": f"{quality}kbps",
-                }
-            return None
-
-        s = results[0]
-        dl_urls = s.get("downloadUrl", [])
-        q_map = {"128": 0, "192": 1, "320": -1}
-        try:
-            dl_url = dl_urls[q_map.get(quality, -1)]["url"]
-        except:
-            dl_url = dl_urls[-1]["url"] if dl_urls else None
-        if not dl_url:
-            return None
-        return {
-            "source": "jiosaavn",
-            "name": s.get("name", "Unknown"),
-            "artist": ", ".join(a["name"] for a in s.get("artists", {}).get("primary", [])) or "Unknown",
-            "album": s.get("album", {}).get("name", "Unknown"),
-            "year": s.get("year", "Unknown"),
-            "duration": int(s.get("duration", 0)),
-            "language": s.get("language", "hindi").capitalize(),
-            "download_url": dl_url,
-            "preview_url": dl_url,
-            "image": s.get("image", [{}])[-1].get("url", ""),
-            "id": s.get("id", ""),
-            "quality": f"{quality}kbps",
-        }
+                dl_url = _get_best_download_url(dl_urls, quality, "link")
+                if dl_url:
+                    print(f"[saavn_old] Found: {s.get('name')} | URL: {dl_url[:60]}")
+                    album_raw = s.get("album", {})
+                    album_name = album_raw.get("name", "Unknown") if isinstance(album_raw, dict) else str(album_raw)
+                    return {
+                        "source": "jiosaavn",
+                        "name": s.get("name", "Unknown"),
+                        "artist": s.get("primaryArtists", "Unknown"),
+                        "album": album_name,
+                        "year": str(s.get("year", "Unknown")),
+                        "duration": int(s.get("duration", 0)),
+                        "language": s.get("language", "hindi").capitalize(),
+                        "download_url": dl_url,
+                        "preview_url": dl_url,
+                        "image": "",
+                        "id": s.get("id", ""),
+                        "quality": f"{quality}kbps",
+                    }
     except Exception as e:
-        print(f"[saavn_quality] Error: {e}")
-        return None
+        print(f"[saavn_old] Error: {e}")
+
+    print(f"[saavn_quality] Both APIs failed for: {query}")
+    return None
 
 # ==================== DEEZER (International - All Languages) ====================
 
