@@ -302,6 +302,14 @@ async def send_song(m, query, msg, quality="320"):
 
     is_group = m.chat.type.name in ("GROUP", "SUPERGROUP")
 
+    # Split title into song name and artist for Telegram display
+    song_name = song_data.get("name", title) if song_data else title
+    artist_name = song_data.get("primaryArtists", song_data.get("artist", "")) if song_data else ""
+    if not artist_name and " - " in title:
+        parts_t = title.split(" - ", 1)
+        song_name = parts_t[0].strip()
+        artist_name = parts_t[1].strip()
+
     try:
         await app.send_audio(
             m.chat.id, path,
@@ -310,7 +318,10 @@ async def send_song(m, query, msg, quality="320"):
                      f"⏱ {mins}:{secs:02d} | 🎧 {quality}kbps\n"
                      f"👤 {m.from_user.first_name}\n\n"
                      f"🤖 {BOT_NAME} | {BOT_USERNAME}"),
-            title=title, duration=duration, reply_markup=reaction_keyboard
+            title=song_name,
+            performer=artist_name,
+            duration=duration,
+            reply_markup=reaction_keyboard
         )
     except Exception as e:
         err_str = str(e)
@@ -323,7 +334,10 @@ async def send_song(m, query, msg, quality="320"):
                              f"💿 {album} | 📅 {year}\n"
                              f"⏱ {mins}:{secs:02d} | 🎧 {quality}kbps\n"
                              f"🤖 {BOT_NAME} | {BOT_USERNAME}"),
-                    title=title, duration=duration, reply_markup=reaction_keyboard
+                    title=song_name,
+                    performer=artist_name,
+                    duration=duration,
+                    reply_markup=reaction_keyboard
                 )
                 try:
                     await msg.edit(
