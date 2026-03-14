@@ -244,7 +244,13 @@ async def send_song(m, query, msg, quality="320"):
                  f"🤖 {BOT_NAME} | {BOT_USERNAME}"),
         title=title, duration=duration, reply_markup=reaction_keyboard
     )
-    await msg.delete()
+    try:
+        await msg.delete()
+    except:
+        try:
+            await msg.edit("✅ Done!")
+        except:
+            pass
 
     # XP notification
     xp_msg = f"✨ **+{xp_earned} XP earned!**"
@@ -1466,7 +1472,11 @@ async def newreleases(_, m: Message):
 @app.on_message(filters.command("night"))
 async def night(_, m: Message):
     msg = await m.reply("🌙 **Fetching late night songs...**")
-    results = search_jiosaavn_multiple("late night chill sad songs hindi", 10)
+    results = []
+    for q in ["night songs hindi", "sad hindi songs", "chill hindi songs", "romantic night songs"]:
+        results = search_jiosaavn_multiple(q, 10)
+        if results:
+            break
     if not results:
         await msg.edit("❌ No songs found!")
         return
