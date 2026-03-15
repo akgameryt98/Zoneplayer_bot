@@ -11,26 +11,24 @@ import apis
 
 # ========== USERBOT + PYTGCALLS SETUP ==========
 from pyrogram import Client as UserClient
+# Patch pyrogram for pytgcalls compatibility
+try:
+    import pyrogram.errors as _pyro_errors
+    if not hasattr(_pyro_errors, 'GroupcallForbidden'):
+        _pyro_errors.GroupcallForbidden = type('GroupcallForbidden', (Exception,), {})
+    if not hasattr(_pyro_errors, 'GroupcallInvalid'):
+        _pyro_errors.GroupcallInvalid = type('GroupcallInvalid', (Exception,), {})
+    if not hasattr(_pyro_errors, 'GroupcallSsrcDuplicateMuch'):
+        _pyro_errors.GroupcallSsrcDuplicateMuch = type('GroupcallSsrcDuplicateMuch', (Exception,), {})
+except: pass
+
 PyTgCalls = None
-MediaStream = None
-AudioPiped = None
-AudioParameters = None
-PYTGCALLS_NEW = False
+PYTGCALLS_LOADED = False
 try:
     from pytgcalls import PyTgCalls as _PyTgCalls
-    try:
-        from pytgcalls.types import MediaStream as _MediaStream
-        PyTgCalls = _PyTgCalls
-        MediaStream = _MediaStream
-        PYTGCALLS_NEW = True
-        print("✅ pytgcalls loaded (new API)")
-    except ImportError:
-        from pytgcalls.types import AudioPiped as _AP, AudioParameters as _APm
-        PyTgCalls = _PyTgCalls
-        AudioPiped = _AP
-        AudioParameters = _APm
-        PYTGCALLS_NEW = False
-        print("✅ pytgcalls loaded (old API)")
+    PyTgCalls = _PyTgCalls
+    PYTGCALLS_LOADED = True
+    print("✅ pytgcalls loaded!")
 except Exception as e:
     print(f"⚠️ pytgcalls not available: {e}")
 import yt_dlp
@@ -140,16 +138,10 @@ async def start_playing(chat_id, song_info):
     vc_playing[chat_id] = song_info
     vc_paused[chat_id] = False
     try:
-        if PYTGCALLS_NEW:
-            await pytgcalls.change_stream(chat_id, MediaStream(url))
-        else:
-            await pytgcalls.change_stream(chat_id, AudioPiped(url, AudioParameters(bitrate=128)))
+        pytgcalls.play(chat_id, url)
     except Exception:
         try:
-            if PYTGCALLS_NEW:
-                await pytgcalls.join_group_call(chat_id, MediaStream(url))
-            else:
-                await pytgcalls.join_group_call(chat_id, AudioPiped(url, AudioParameters(bitrate=128)))
+            await pytgcalls.join_group_call(chat_id, url)
         except Exception as e:
             print(f"[VC] Play error: {e}")
 
@@ -1819,10 +1811,7 @@ async def play_vc(_, m: Message):
         return
     await msg.edit(f"🎵 **Joining VC...**")
     try:
-        if PYTGCALLS_NEW:
-            await pytgcalls.join_group_call(chat_id, MediaStream(url))
-        else:
-            await pytgcalls.join_group_call(chat_id, AudioPiped(url, AudioParameters(bitrate=128)))
+        pytgcalls.play(chat_id, url)
         vc_playing[chat_id] = song_info
         vc_paused[chat_id] = False
         await msg.edit(
@@ -2884,7 +2873,7 @@ async def main():
     if userbot and pytgcalls:
         try:
             await userbot.start()
-            await pytgcalls.start()
+            pytgcalls.start()
 
             @pytgcalls.on_stream_end()
             async def on_stream_end(client, update):
