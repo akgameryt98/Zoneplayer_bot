@@ -1,7 +1,4 @@
-cat > /mnt/user-data/outputs/requirements.txt << 'EOF'
 pyrogram==2.0.106
 tgcrypto
 yt-dlp
 requests
-EOF
-echo "done"
