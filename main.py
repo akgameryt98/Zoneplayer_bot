@@ -11,19 +11,28 @@ import apis
 
 # ========== USERBOT + PYTGCALLS SETUP ==========
 from pyrogram import Client as UserClient
+PyTgCalls = None
+MediaStream = None
+AudioPiped = None
+AudioParameters = None
+PYTGCALLS_NEW = False
 try:
-    from pytgcalls import PyTgCalls
-    from pytgcalls.types import MediaStream
-    from pytgcalls.types import AudioQuality
-    PYTGCALLS_NEW = True
-except ImportError:
+    from pytgcalls import PyTgCalls as _PyTgCalls
     try:
-        from pytgcalls import PyTgCalls
-        from pytgcalls.types import AudioPiped, AudioParameters
-        PYTGCALLS_NEW = False
+        from pytgcalls.types import MediaStream as _MediaStream
+        PyTgCalls = _PyTgCalls
+        MediaStream = _MediaStream
+        PYTGCALLS_NEW = True
+        print("✅ pytgcalls loaded (new API)")
     except ImportError:
-        PyTgCalls = None
+        from pytgcalls.types import AudioPiped as _AP, AudioParameters as _APm
+        PyTgCalls = _PyTgCalls
+        AudioPiped = _AP
+        AudioParameters = _APm
         PYTGCALLS_NEW = False
+        print("✅ pytgcalls loaded (old API)")
+except Exception as e:
+    print(f"⚠️ pytgcalls not available: {e}")
 import yt_dlp
 
 USER_STRING = os.environ.get("USER_STRING_SESSION", "")
@@ -39,7 +48,11 @@ userbot = UserClient(
 ) if USER_STRING else None
 
 # PyTgCalls instance
-pytgcalls = PyTgCalls(userbot) if userbot else None
+try:
+    pytgcalls = PyTgCalls(userbot) if (userbot and PyTgCalls) else None
+except Exception as e:
+    print(f"⚠️ PyTgCalls init failed: {e}")
+    pytgcalls = None
 
 # VC State
 vc_queue = {}      # {chat_id: [{"title": "", "url": "", "requested_by": ""}]}
