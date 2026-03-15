@@ -11,9 +11,19 @@ import apis
 
 # ========== USERBOT + PYTGCALLS SETUP ==========
 from pyrogram import Client as UserClient
-from pytgcalls import PyTgCalls
-from pytgcalls.types import AudioPiped, AudioParameters
-from pytgcalls.types.stream import StreamAudioEnded
+try:
+    from pytgcalls import PyTgCalls
+    from pytgcalls.types import MediaStream
+    from pytgcalls.types import AudioQuality
+    PYTGCALLS_NEW = True
+except ImportError:
+    try:
+        from pytgcalls import PyTgCalls
+        from pytgcalls.types import AudioPiped, AudioParameters
+        PYTGCALLS_NEW = False
+    except ImportError:
+        PyTgCalls = None
+        PYTGCALLS_NEW = False
 import yt_dlp
 
 USER_STRING = os.environ.get("USER_STRING_SESSION", "")
@@ -113,22 +123,20 @@ async def start_playing(chat_id, song_info):
     """Start playing a song in VC"""
     if not pytgcalls:
         return
+    url = song_info["url"]
+    vc_playing[chat_id] = song_info
+    vc_paused[chat_id] = False
     try:
-        url = song_info["url"]
-        vc_playing[chat_id] = song_info
-        vc_paused[chat_id] = False
-        await pytgcalls.change_stream(
-            chat_id,
-            AudioPiped(url, AudioParameters(bitrate=128))
-        )
+        if PYTGCALLS_NEW:
+            await pytgcalls.change_stream(chat_id, MediaStream(url))
+        else:
+            await pytgcalls.change_stream(chat_id, AudioPiped(url, AudioParameters(bitrate=128)))
     except Exception:
         try:
-            await pytgcalls.join_group_call(
-                chat_id,
-                AudioPiped(song_info["url"], AudioParameters(bitrate=128))
-            )
-            vc_playing[chat_id] = song_info
-            vc_paused[chat_id] = False
+            if PYTGCALLS_NEW:
+                await pytgcalls.join_group_call(chat_id, MediaStream(url))
+            else:
+                await pytgcalls.join_group_call(chat_id, AudioPiped(url, AudioParameters(bitrate=128)))
         except Exception as e:
             print(f"[VC] Play error: {e}")
 
@@ -1798,10 +1806,10 @@ async def play_vc(_, m: Message):
         return
     await msg.edit(f"🎵 **Joining VC...**")
     try:
-        await pytgcalls.join_group_call(
-            chat_id,
-            AudioPiped(url, AudioParameters(bitrate=128))
-        )
+        if PYTGCALLS_NEW:
+            await pytgcalls.join_group_call(chat_id, MediaStream(url))
+        else:
+            await pytgcalls.join_group_call(chat_id, AudioPiped(url, AudioParameters(bitrate=128)))
         vc_playing[chat_id] = song_info
         vc_paused[chat_id] = False
         await msg.edit(
