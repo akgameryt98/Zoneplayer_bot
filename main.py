@@ -1818,8 +1818,18 @@ async def play_vc(_, m: Message):
     try:
         # Try all possible method names for different pytgcalls versions
         from pytgcalls.types import MediaStream
-        await pytgcalls.join_group_call(chat_id, MediaStream(url))
-        print(f"[VC] Joined with MediaStream!")
+        stream = MediaStream(url)
+        # Try different method names
+        joined = False
+        for method in ["join_group_call", "join", "call", "start_call", "play", "start_stream"]:
+            if hasattr(pytgcalls, method):
+                print(f"[VC] Trying: {method}")
+                await getattr(pytgcalls, method)(chat_id, stream)
+                joined = True
+                print(f"[VC] Success with: {method}")
+                break
+        if not joined:
+            raise Exception(f"No valid method found! Methods: {[m for m in dir(pytgcalls) if not m.startswith('_')]}")
         vc_playing[chat_id] = song_info
         vc_paused[chat_id] = False
         await msg.edit(
@@ -2882,9 +2892,8 @@ async def main():
         try:
             await userbot.start()
             await pytgcalls.start()
-            # Debug - print available methods
             methods = [m for m in dir(pytgcalls) if not m.startswith('_')]
-            print(f"[VC DEBUG] Available methods: {methods}")
+            print(f"[VC DEBUG] Methods: {methods}")
 
             @pytgcalls.on_stream_end()
             async def on_stream_end(client, update):
