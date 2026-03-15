@@ -5,6 +5,5 @@ RUN apt-get update && apt-get install -y ffmpeg git gcc g++ libffi-dev libssl-de
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-RUN python -c "import pyrogram.errors; setattr(pyrogram.errors, 'GroupcallForbidden', type('GroupcallForbidden', (Exception,), {}))" || true
 COPY . .
 CMD ["python", "main.py"]
