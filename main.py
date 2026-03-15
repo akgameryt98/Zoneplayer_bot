@@ -137,28 +137,18 @@ async def start_playing(chat_id, song_info):
     url = song_info["url"]
     vc_playing[chat_id] = song_info
     vc_paused[chat_id] = False
-    played = False
-    # Try change_stream first (already in call)
-    for method_name in ["change_stream", "join_group_call", "play", "stream"]:
-        if played:
-            break
+    try:
+        from pytgcalls.types import MediaStream
+        await pytgcalls.change_stream(chat_id, MediaStream(url))
+        print(f"[VC] Changed stream: {song_info['title']}")
+    except Exception as e:
+        print(f"[VC] change_stream failed: {e}")
         try:
-            method = getattr(pytgcalls, method_name)
-            if method_name == "play":
-                await method(chat_id, url)
-            elif method_name == "stream":
-                await method(chat_id, url)
-            else:
-                try:
-                    from pytgcalls.types import AudioPiped, AudioParameters
-                    await method(chat_id, AudioPiped(url, AudioParameters(bitrate=128)))
-                except:
-                    from pytgcalls.types import MediaStream
-                    await method(chat_id, MediaStream(url))
-            played = True
-            print(f"[VC] Playing with {method_name}: {song_info['title']}")
-        except Exception as e:
-            print(f"[VC] {method_name} failed: {e}")
+            from pytgcalls.types import MediaStream
+            await pytgcalls.join_group_call(chat_id, MediaStream(url))
+            print(f"[VC] Joined new: {song_info['title']}")
+        except Exception as e2:
+            print(f"[VC] join also failed: {e2}")
 
 XP_REWARDS = {
     "download": 10,
@@ -1827,48 +1817,9 @@ async def play_vc(_, m: Message):
     await msg.edit(f"🎵 **Joining VC...**")
     try:
         # Try all possible method names for different pytgcalls versions
-        played = False
-        errors = []
-        
-        # Method 1: join_group_call with AudioPiped
-        try:
-            from pytgcalls.types import AudioPiped, AudioParameters
-            await pytgcalls.join_group_call(chat_id, AudioPiped(url, AudioParameters(bitrate=128)))
-            played = True
-            print("[VC] joined with AudioPiped")
-        except Exception as e:
-            errors.append(f"AudioPiped: {e}")
-        
-        # Method 2: join_group_call with MediaStream
-        if not played:
-            try:
-                from pytgcalls.types import MediaStream
-                await pytgcalls.join_group_call(chat_id, MediaStream(url))
-                played = True
-                print("[VC] joined with MediaStream")
-            except Exception as e:
-                errors.append(f"MediaStream: {e}")
-        
-        # Method 3: play() method
-        if not played:
-            try:
-                await pytgcalls.play(chat_id, url)
-                played = True
-                print("[VC] joined with play()")
-            except Exception as e:
-                errors.append(f"play(): {e}")
-        
-        # Method 4: stream()
-        if not played:
-            try:
-                await pytgcalls.stream(chat_id, url)
-                played = True
-                print("[VC] joined with stream()")
-            except Exception as e:
-                errors.append(f"stream(): {e}")
-
-        if not played:
-            raise Exception(" | ".join(errors))
+        from pytgcalls.types import MediaStream
+        await pytgcalls.join_group_call(chat_id, MediaStream(url))
+        print(f"[VC] Joined with MediaStream!")
         vc_playing[chat_id] = song_info
         vc_paused[chat_id] = False
         await msg.edit(
