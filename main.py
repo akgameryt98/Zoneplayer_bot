@@ -1815,6 +1815,9 @@ async def play_vc(_, m: Message):
         )
         return
     await msg.edit(f"🎵 **Joining VC...**")
+    if not pytgcalls:
+        await msg.edit("❌ VC not started! Check Railway logs.")
+        return
     try:
         # Try all possible method names for different pytgcalls versions
         from pytgcalls.types import MediaStream
@@ -2890,11 +2893,7 @@ async def main():
     # Start userbot + pytgcalls if configured
     if userbot and pytgcalls:
         try:
-            await userbot.start()
-            await pytgcalls.start()
-            methods = [m for m in dir(pytgcalls) if not m.startswith('_')]
-            print(f"[VC DEBUG] Methods: {methods}")
-
+            # Register stream end handler BEFORE starting
             @pytgcalls.on_stream_end()
             async def on_stream_end(client, update):
                 chat_id = update.chat_id
@@ -2913,9 +2912,17 @@ async def main():
                         await pytgcalls.leave_group_call(chat_id)
                     except: pass
 
-            print("✅ Userbot + VC started!")
+            # Start userbot first, then pytgcalls
+            await userbot.start()
+            print("✅ Userbot started!")
+            await pytgcalls.start()
+            print("✅ PyTgCalls started!")
+            methods = [m for m in dir(pytgcalls) if not m.startswith('_')]
+            print(f"[VC] Available methods: {methods}")
+            vc_started = True
+
         except Exception as e:
-            print(f"⚠️ Userbot failed: {e}")
+            print(f"⚠️ Userbot/VC failed to start: {e}")
     else:
         print("⚠️ USER_STRING_SESSION not set — VC disabled")
 
