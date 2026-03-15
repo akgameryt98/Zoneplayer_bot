@@ -138,12 +138,24 @@ async def start_playing(chat_id, song_info):
     vc_playing[chat_id] = song_info
     vc_paused[chat_id] = False
     try:
-        pytgcalls.play(chat_id, url)
-    except Exception:
+        from pytgcalls.types import AudioPiped, AudioParameters
+        stream = AudioPiped(url, AudioParameters(bitrate=128))
         try:
-            await pytgcalls.join_group_call(chat_id, url)
-        except Exception as e:
-            print(f"[VC] Play error: {e}")
+            await pytgcalls.change_stream(chat_id, stream)
+        except:
+            await pytgcalls.join_group_call(chat_id, stream)
+        print(f"[VC] Playing: {song_info['title']}")
+    except Exception as e:
+        print(f"[VC] AudioPiped failed: {e}")
+        try:
+            from pytgcalls.types import MediaStream
+            stream = MediaStream(url)
+            try:
+                await pytgcalls.change_stream(chat_id, stream)
+            except:
+                await pytgcalls.join_group_call(chat_id, stream)
+        except Exception as e2:
+            print(f"[VC] MediaStream also failed: {e2}")
 
 XP_REWARDS = {
     "download": 10,
@@ -1811,7 +1823,17 @@ async def play_vc(_, m: Message):
         return
     await msg.edit(f"🎵 **Joining VC...**")
     try:
-        pytgcalls.play(chat_id, url)
+        try:
+            from pytgcalls.types import AudioPiped, AudioParameters
+            await pytgcalls.join_group_call(chat_id, AudioPiped(url, AudioParameters(bitrate=128)))
+        except Exception as e1:
+            print(f"[VC] AudioPiped join failed: {e1}")
+            try:
+                from pytgcalls.types import MediaStream
+                await pytgcalls.join_group_call(chat_id, MediaStream(url))
+            except Exception as e2:
+                print(f"[VC] MediaStream join failed: {e2}")
+                raise Exception(f"Both stream types failed: {e2}")
         vc_playing[chat_id] = song_info
         vc_paused[chat_id] = False
         await msg.edit(
@@ -2873,7 +2895,7 @@ async def main():
     if userbot and pytgcalls:
         try:
             await userbot.start()
-            pytgcalls.start()
+            await pytgcalls.start()
 
             @pytgcalls.on_stream_end()
             async def on_stream_end(client, update):
