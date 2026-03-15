@@ -1,4 +1,3 @@
-cat > /mnt/user-data/outputs/Dockerfile << 'EOF'
 FROM python:3.10-slim
 
 RUN apt-get update && apt-get install -y \
@@ -19,5 +18,3 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install --no-cache-dir py-tgcalls
 COPY . .
 CMD ["python", "main.py"]
-EOF
-echo "done"
