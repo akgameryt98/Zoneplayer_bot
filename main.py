@@ -12,29 +12,7 @@ import apis
 # ========== USERBOT + PYTGCALLS SETUP ==========
 from pyrogram import Client as UserClient
 import yt_dlp
-
-# Patch pyrogram BEFORE pytgcalls import
-def _patch_pyrogram():
-    try:
-        import pyrogram.errors as _e
-        for name in ['GroupcallForbidden','GroupcallInvalid','GroupcallSsrcDuplicateMuch']:
-            if not hasattr(_e, name):
-                setattr(_e, name, type(name, (Exception,), {}))
-        return True
-    except Exception as ex:
-        print(f"[PATCH] Error: {ex}")
-        return False
-
-_patch_ok = _patch_pyrogram()
-print(f"[BOOT] Pyrogram patch: {_patch_ok}")
-
-PyTgCalls = None
-try:
-    from pytgcalls import PyTgCalls as _PyTgCalls
-    PyTgCalls = _PyTgCalls
-    print("[BOOT] pytgcalls imported OK")
-except Exception as e:
-    print(f"[BOOT] pytgcalls import failed: {e}")
+print("[BOOT] yt_dlp imported OK")
 
 USER_STRING = os.environ.get("USER_STRING_SESSION", "")
 USER_API_ID = int(os.environ.get("USER_API_ID", 0))
@@ -49,15 +27,7 @@ userbot = UserClient(
 ) if USER_STRING else None
 
 # PyTgCalls instance
-pytgcalls = None
-if userbot and PyTgCalls:
-    try:
-        _patch_pyrogram()  # patch again just before init
-        pytgcalls = PyTgCalls(userbot)
-        print("[BOOT] PyTgCalls instance created OK")
-    except Exception as e:
-        print(f"[BOOT] PyTgCalls init failed: {e}")
-        pytgcalls = None
+pytgcalls = None  # Will be initialized in main()
 
 # VC State
 vc_queue = {}      # {chat_id: [{"title": "", "url": "", "requested_by": ""}]}
@@ -139,6 +109,7 @@ async def play_next(chat_id):
 
 async def start_playing(chat_id, song_info):
     """Start playing a song in VC"""
+    global pytgcalls
     if not pytgcalls:
         return
     url = song_info["url"]
@@ -146,16 +117,13 @@ async def start_playing(chat_id, song_info):
     vc_paused[chat_id] = False
     try:
         from pytgcalls.types import MediaStream
-        await pytgcalls.change_stream(chat_id, MediaStream(url))
-        print(f"[VC] Changed stream: {song_info['title']}")
-    except Exception as e:
-        print(f"[VC] change_stream failed: {e}")
         try:
-            from pytgcalls.types import MediaStream
+            await pytgcalls.change_stream(chat_id, MediaStream(url))
+        except:
             await pytgcalls.join_group_call(chat_id, MediaStream(url))
-            print(f"[VC] Joined new: {song_info['title']}")
-        except Exception as e2:
-            print(f"[VC] join also failed: {e2}")
+        print(f"[VC] Playing: {song_info['title']}")
+    except Exception as e:
+        print(f"[VC] start_playing error: {e}")
 
 XP_REWARDS = {
     "download": 10,
@@ -1823,7 +1791,7 @@ async def play_vc(_, m: Message):
         return
     await msg.edit(f"🎵 **Joining VC...**")
     if not pytgcalls:
-        await msg.edit("❌ VC not started! Check Railway logs.")
+        await msg.edit("❌ VC not ready! Wait karo ya bot restart karo.")
         return
     try:
         # Try all possible method names for different pytgcalls versions
@@ -2905,7 +2873,7 @@ async def main():
     print(f"[DEBUG] PyTgCalls class: {PyTgCalls is not None}")
 
     # Start userbot + pytgcalls if configured
-    if userbot and pytgcalls:
+    if userbot:
         try:
             # Register stream end handler BEFORE starting
             @pytgcalls.on_stream_end()
