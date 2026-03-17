@@ -2898,20 +2898,16 @@ async def main():
             print("[VC] Starting userbot...")
             await userbot.start()
             print("✅ Userbot started!")
-            
-            # Start pytgcalls - try both sync and async
-            print("[VC] Starting pytgcalls...")
-            try:
-                result = pytgcalls.start()
-                if hasattr(result, '__await__'):
-                    await result
-            except Exception as e:
-                print(f"[VC] pytgcalls.start() error: {e}")
+
+            # Initialize pytgcalls NOW after userbot is connected
+            global pytgcalls
+            from pytgcalls import PyTgCalls as _PTC
+            pytgcalls = _PTC(userbot)
+            print("✅ PyTgCalls created!")
+
+            # Start pytgcalls
+            await pytgcalls.start()
             print("✅ PyTgCalls started!")
-            
-            # Print all methods
-            methods = [m for m in dir(pytgcalls) if not m.startswith('_')]
-            print(f"[VC] Methods: {methods}")
 
         except Exception as e:
             import traceback
