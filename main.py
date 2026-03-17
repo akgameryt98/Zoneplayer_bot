@@ -49,6 +49,22 @@ Tu music bot BeatNova ka AI dost hai — gana sunna, suggest karna, baat karna s
 
 PLACEHOLDERS = ["[song]", "[song name]", "[name]", "[artist]", "[line]", "[mood]", "[type]", "[a-z]"]
 
+def is_valid_quiz_line(line):
+    """Check if lyrics line is in Hindi/English only — no Punjabi/Gujarati/Tamil etc script"""
+    # Allow only Latin (English) and Devanagari (Hindi) characters
+    import unicodedata
+    clean = line.strip()
+    if not clean or len(clean) < 15:
+        return False
+    for char in clean:
+        if char.isspace() or char in ',.!?"()-[]':
+            continue
+        name = unicodedata.name(char, '')
+        # Allow Latin (English), Devanagari (Hindi/Urdu romanized), digits
+        if not (char.isascii() or 'DEVANAGARI' in name or char.isdigit()):
+            return False
+    return True
+
 # Large quiz song pools for variety
 QUIZ_QUERIES = [
     "hindi popular songs hits",
@@ -87,6 +103,28 @@ QUIZ_QUERIES = [
     "the weeknd songs",
     "coldplay songs",
     "imagine dragons songs",
+]
+
+# Hindi-only queries for lyrics-based games (avoid Punjabi/regional scripts)
+HINDI_QUIZ_QUERIES = [
+    "hindi romantic songs hits",
+    "bollywood sad songs hindi",
+    "arijit singh hindi songs",
+    "atif aslam hindi songs",
+    "jubin nautiyal songs hindi",
+    "shreya ghoshal bollywood",
+    "armaan malik hindi songs",
+    "vishal mishra songs",
+    "darshan raval hindi songs",
+    "b praak hindi songs",
+    "mohit chauhan songs",
+    "sonu nigam bollywood songs",
+    "kumar sanu hindi songs",
+    "udit narayan hindi songs",
+    "90s hindi romantic songs",
+    "2000s bollywood hindi songs",
+    "new hindi songs 2024",
+    "hindi party songs bollywood",
 ]
 
 MUSIC_FACTS = [
@@ -1288,8 +1326,8 @@ async def show_favorites(_, m: Message):
 async def fillblank(_, m: Message):
     msg = await m.reply("🎯 **Preparing Fill-in-the-Blank...**")
     chat_id = m.chat.id
-    # Try multiple queries to find song with lyrics
-    query = random.choice(QUIZ_QUERIES)
+    # Use Hindi queries for lyrics games (avoid Punjabi/regional scripts)
+    query = random.choice(HINDI_QUIZ_QUERIES)
     results = search_jiosaavn_multiple(query, 20)
     if not results:
         await msg.edit("❌ Could not fetch! Try again.")
@@ -1302,7 +1340,6 @@ async def fillblank(_, m: Message):
         artist = song.get("primaryArtists", song.get("artist", "Unknown"))
         lyrics_text, _ = get_lyrics(f"{title} - {artist}")
         if not lyrics_text:
-            # Try without artist
             lyrics_text, _ = get_lyrics(title)
         if lyrics_text:
             lines = [l.strip() for l in lyrics_text.split("\n")
@@ -1502,7 +1539,8 @@ async def groupquiz(_, m: Message):
             lyrics_text, _ = get_lyrics(f"{title} - {artist}")
             if lyrics_text:
                 lines = [l.strip() for l in lyrics_text.split("\n")
-                        if len(l.strip()) > 25 and not l.strip().startswith("[")]
+                        if len(l.strip()) > 25 and not l.strip().startswith("[")
+                        and is_valid_quiz_line(l)]
                 if len(lines) >= 2:
                     found = True
                     break
@@ -1550,8 +1588,8 @@ async def groupstats(_, m: Message):
 async def guesssong(_, m: Message):
     msg = await m.reply("🎯 **Fetching quiz song...**")
     chat_id = m.chat.id
-    # Use diverse random query
-    query = random.choice(QUIZ_QUERIES)
+    # Use Hindi queries for lyrics (avoid Punjabi/regional scripts)
+    query = random.choice(HINDI_QUIZ_QUERIES)
     results = search_jiosaavn_multiple(query, 20)
     if not results:
         await msg.edit("❌ Could not fetch! Try again.")
@@ -1564,8 +1602,9 @@ async def guesssong(_, m: Message):
         title, artist = song["name"], song.get("primaryArtists", song.get("artist", "Unknown"))
         lyrics_text, _ = get_lyrics(f"{title} - {artist}")
         if lyrics_text:
-            lines = [l.strip() for l in lyrics_text.split("\n") 
-                    if len(l.strip()) > 25 and not l.strip().startswith("[")]
+            lines = [l.strip() for l in lyrics_text.split("\n")
+                    if len(l.strip()) > 25 and not l.strip().startswith("[")
+                    and is_valid_quiz_line(l)]
             if len(lines) >= 3:
                 found = True
                 break
