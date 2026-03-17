@@ -10,6 +10,12 @@ import database as db
 import apis
 
 
+
+
+
+
+
+
 app = Client("beatnova_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 BOT_NAME = "BeatNova"
@@ -20,6 +26,25 @@ START_TIME = datetime.datetime.now()
 active_quiz = {}
 group_votes = {}
 today_downloads = {"count": 0, "date": datetime.date.today()}
+chat_histories = {}  # {user_id: [{"role": "user/assistant", "content": "..."}]}
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+
+BEATNOVA_SYSTEM_PROMPT = """Tu BeatNova hai — ek music-loving AI dost jo Hinglish mein baat karta hai.
+
+Rules:
+- Hinglish mein baat kar (Hindi + English mix)
+- Real dost jaisa natural baat kar — formal mat ban
+- Choti replies de (2-3 lines max) jab tak kuch explain nahi karna
+- Music ke baare mein passionate rehna
+- Funny aur friendly rehna
+- Agar koi song ya artist ke baare mein pooche to suggest karo
+- Bot commands bhi suggest karo jaise: "try kar /download [song]"
+- Kabhi mat bol ki tu AI hai — bas dost jaisa baat kar
+- Agar koi personal problem ho to empathy dikhao
+- "yaar", "bhai", "arre", "sach mein", "matlab" jaisi words use karo
+
+Tu music bot BeatNova ka AI dost hai — gana sunna, suggest karna, baat karna sab karta hai!"""
 
 
 PLACEHOLDERS = ["[song]", "[song name]", "[name]", "[artist]", "[line]", "[mood]", "[type]", "[a-z]"]
@@ -951,6 +976,67 @@ async def birthday(_, m: Message):
     await msg.edit(text, reply_markup=keyboard)
 
 # C
+
+@app.on_message(filters.command("chat"))
+async def chat_cmd(_, m: Message):
+    if not GROQ_API_KEY:
+        await m.reply("❌ Chat feature setup nahi hai!")
+        return
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip():
+        await m.reply(
+            "💬 **BeatNova AI Chat!**\n\n"
+            "Mujhse kuch bhi pooch — music, songs, ya bas baat karo!\n\n"
+            "Example:\n"
+            "`/chat Arijit Singh ke best songs kaunse hain?`\n"
+            "`/chat Mujhe sad songs suggest karo`\n"
+            "`/chat Kya chal raha hai?`\n\n"
+            "🗑 `/clearchat` — Chat history clear karo"
+        )
+        return
+    user_id = m.from_user.id
+    user_msg = parts[1].strip()
+    # Init history
+    if user_id not in chat_histories:
+        chat_histories[user_id] = []
+    # Add user message
+    chat_histories[user_id].append({"role": "user", "content": user_msg})
+    # Keep last 10 messages only
+    if len(chat_histories[user_id]) > 20:
+        chat_histories[user_id] = chat_histories[user_id][-20:]
+    msg = await m.reply("💬 **Thinking...**")
+    try:
+        messages = [{"role": "system", "content": BEATNOVA_SYSTEM_PROMPT}]
+        messages += chat_histories[user_id]
+        def call_groq():
+            r = requests.post(
+                GROQ_URL,
+                headers={
+                    "Authorization": f"Bearer {GROQ_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "llama3-8b-8192",
+                    "messages": messages,
+                    "max_tokens": 300,
+                    "temperature": 0.8,
+                },
+                timeout=30
+            )
+            return r.json()
+        data = await asyncio.to_thread(call_groq)
+        reply_text = data["choices"][0]["message"]["content"].strip()
+        # Save assistant reply to history
+        chat_histories[user_id].append({"role": "assistant", "content": reply_text})
+        await msg.edit(f"💬 {reply_text}")
+    except Exception as e:
+        await msg.edit(f"❌ Error: `{str(e)[:50]}`\nDobara try karo!")
+
+@app.on_message(filters.command("clearchat"))
+async def clearchat(_, m: Message):
+    user_id = m.from_user.id
+    chat_histories.pop(user_id, None)
+    await m.reply("🗑 **Chat history clear ho gayi!**\nFresh start karo `/chat` se!")
 
 @app.on_message(filters.command("chain"))
 async def chain(_, m: Message):
@@ -2456,7 +2542,8 @@ async def start(_, m: Message):
                   f"🔍 `/search Arijit Singh`\n"
                   f"🎭 `/mood happy`\n"
                   f"🎮 `/guesssong`\n"
-                  f"🎁 `/dailyreward` — Free XP!\n\n"
+                  f"🎁 `/dailyreward` — Free XP!\n"
+                  f"💬 `/chat Kya chal raha hai?` — AI Chat!\n\n"
                   f"━━━━━━━━━━━━━━━━━━━━\n"
                   f"📋 **Browse commands below** 👇\n"
                   f"━━━━━━━━━━━━━━━━━━━━\n\n"
