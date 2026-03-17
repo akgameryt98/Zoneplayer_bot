@@ -11,27 +11,30 @@ import apis
 
 # ========== USERBOT + PYTGCALLS SETUP ==========
 from pyrogram import Client as UserClient
-# Patch pyrogram for pytgcalls compatibility
-try:
-    import pyrogram.errors as _pyro_errors
-    if not hasattr(_pyro_errors, 'GroupcallForbidden'):
-        _pyro_errors.GroupcallForbidden = type('GroupcallForbidden', (Exception,), {})
-    if not hasattr(_pyro_errors, 'GroupcallInvalid'):
-        _pyro_errors.GroupcallInvalid = type('GroupcallInvalid', (Exception,), {})
-    if not hasattr(_pyro_errors, 'GroupcallSsrcDuplicateMuch'):
-        _pyro_errors.GroupcallSsrcDuplicateMuch = type('GroupcallSsrcDuplicateMuch', (Exception,), {})
-except: pass
+import yt_dlp
+
+# Patch pyrogram BEFORE pytgcalls import
+def _patch_pyrogram():
+    try:
+        import pyrogram.errors as _e
+        for name in ['GroupcallForbidden','GroupcallInvalid','GroupcallSsrcDuplicateMuch']:
+            if not hasattr(_e, name):
+                setattr(_e, name, type(name, (Exception,), {}))
+        return True
+    except Exception as ex:
+        print(f"[PATCH] Error: {ex}")
+        return False
+
+_patch_ok = _patch_pyrogram()
+print(f"[BOOT] Pyrogram patch: {_patch_ok}")
 
 PyTgCalls = None
-PYTGCALLS_LOADED = False
 try:
     from pytgcalls import PyTgCalls as _PyTgCalls
     PyTgCalls = _PyTgCalls
-    PYTGCALLS_LOADED = True
-    print("✅ pytgcalls loaded!")
+    print("[BOOT] pytgcalls imported OK")
 except Exception as e:
-    print(f"⚠️ pytgcalls not available: {e}")
-import yt_dlp
+    print(f"[BOOT] pytgcalls import failed: {e}")
 
 USER_STRING = os.environ.get("USER_STRING_SESSION", "")
 USER_API_ID = int(os.environ.get("USER_API_ID", 0))
@@ -46,11 +49,15 @@ userbot = UserClient(
 ) if USER_STRING else None
 
 # PyTgCalls instance
-try:
-    pytgcalls = PyTgCalls(userbot) if (userbot and PyTgCalls) else None
-except Exception as e:
-    print(f"⚠️ PyTgCalls init failed: {e}")
-    pytgcalls = None
+pytgcalls = None
+if userbot and PyTgCalls:
+    try:
+        _patch_pyrogram()  # patch again just before init
+        pytgcalls = PyTgCalls(userbot)
+        print("[BOOT] PyTgCalls instance created OK")
+    except Exception as e:
+        print(f"[BOOT] PyTgCalls init failed: {e}")
+        pytgcalls = None
 
 # VC State
 vc_queue = {}      # {chat_id: [{"title": "", "url": "", "requested_by": ""}]}
