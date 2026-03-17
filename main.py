@@ -25,6 +25,10 @@ START_TIME = datetime.datetime.now()
 
 active_quiz = {}
 group_votes = {}
+active_bomb = {}   # {chat_id: {"holder": user_id, "name": str, "timer": int}}
+active_duel = {}   # {chat_id: {"p1": id, "p2": id, "hp1": int, "hp2": int, "turn": id}}
+active_guess = {}  # {chat_id: {"number": int, "attempts": int}}
+active_wordle = {} # {user_id: {"word": str, "attempts": list}}
 today_downloads = {"count": 0, "date": datetime.date.today()}
 chat_histories = {}  # {user_id: [{"role": "user/assistant", "content": "..."}]}
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
@@ -642,32 +646,39 @@ async def help_category(_, cb):
             "🔥 `/trendingartist`\n🌍 `/trending`\n🎭 `/vibe`\n📅 `/year`\n💿 `/discography`"
         ),
         "games": (
-            "🎮 **Games & Fun**\n\n"
+            "🎮 **Music Games**\n\n"
             "🎯 `/guesssong` — Lyrics se song guess karo\n"
             "🎮 `/musicquiz` — A/B/C/D music quiz\n"
             "🎤 `/artistquiz` — Kaunse artist ne gaaya?\n"
             "🎯 `/fillblank` — Lyrics mein blank bharo\n"
             "📅 `/yeargame` — Song ka year guess karo\n"
-            "📅 `/challenge` — Aaj ka daily challenge\n"
+            "📅 `/challenge` — Daily challenge\n"
             "🏆 `/tournament` — Song tournament\n"
-            "⚖️ `/compare [s1] | [s2]` — Songs compare karo\n"
-            "💬 `/quote` — Music quote\n"
-            "🎵 `/musicfact` — Random music fact\n"
-            "🥚 `/easteregg` — Hidden easter egg\n"
-            "🔮 `/secret` — Secret message\n\n"
-            "**👥 Group Games:**\n"
+            "⚖️ `/compare [s1] | [s2]` — Compare songs\n\n"
+            "**👥 Group Music Games:**\n"
             "🎮 `/groupquiz` — Group quiz\n"
-            "⚔️ `/songbattle [s1] | [s2]` — Song battle vote\n"
-            "📊 `/votesong` — Group song vote\n\n"
+            "⚔️ `/songbattle [s1] | [s2]` — Song battle\n"
+            "📊 `/votesong` — Group vote\n\n"
             "**🎉 Party Mode:**\n"
-            "🎉 `/party` — Party mode shuru karo\n"
-            "➕ `/addsong [song]` — Queue mein add karo\n"
-            "📋 `/partyqueue` — Queue dekho\n"
-            "⏭ `/skipparty` — Skip karo\n"
-            "🛑 `/stopparty` — Party band karo\n\n"
+            "🎉 `/party` — Party mode\n"
+            "➕ `/addsong [song]` — Queue mein add\n"
+            "📋 `/partyqueue` | ⏭ `/skipparty` | 🛑 `/stopparty`\n\n"
             "**⭐ Ratings:**\n"
-            "⭐ `/rate [song]` — Song rate karo\n"
-            "🏆 `/topsongs` — Top rated songs"
+            "⭐ `/rate [song]` | 🏆 `/topsongs`"
+        ),
+        "fungames": (
+            "🕹 **Fun Games**\n\n"
+            "🎰 `/slots` — Slot machine! Teen same = jackpot!\n"
+            "🎲 `/dice` — Dice roll (default 6, try `/dice 20`)\n"
+            "🔢 `/guess` — 1-100 number guess karo\n"
+            "💣 `/bomb` — Bomb pass karo group mein!\n"
+            "   └ `/passbomb @user` — Pass karo\n"
+            "⚔️ `/duel @user` — 1v1 HP battle\n"
+            "   └ `/attack` — Attack karo\n"
+            "   └ `/defend` — Block karo\n"
+            "🟩 `/wordle` — 5-letter word guess game\n\n"
+            "🏆 Jitne pe XP milte hain!\n"
+            "💬 `/quote` | 🎵 `/musicfact` | 🥚 `/easteregg`"
         ),
         "account": (
             "👤 **My Account**\n\n"
@@ -695,8 +706,9 @@ async def help_back(_, cb):
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🎵 Download & Search", callback_data="help_download"),
          InlineKeyboardButton("🌍 Discover", callback_data="help_discover")],
-        [InlineKeyboardButton("🎮 Games & Fun", callback_data="help_games"),
-         InlineKeyboardButton("👤 My Account", callback_data="help_account")],
+        [InlineKeyboardButton("🎮 Music Games", callback_data="help_games"),
+         InlineKeyboardButton("🕹 Fun Games", callback_data="help_fungames")],
+    [InlineKeyboardButton("👤 My Account", callback_data="help_account")],
         [InlineKeyboardButton("📊 Stats & Info", callback_data="help_stats")]
     ])
     await cb.message.edit_text(f"❓ **{BOT_NAME} Help Menu**\n\nChoose a category:", reply_markup=keyboard)
@@ -1649,8 +1661,9 @@ async def help_cmd(_, m: Message):
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🎵 Download & Search", callback_data="help_download"),
          InlineKeyboardButton("🌍 Discover", callback_data="help_discover")],
-        [InlineKeyboardButton("🎮 Games & Fun", callback_data="help_games"),
-         InlineKeyboardButton("👤 My Account", callback_data="help_account")],
+        [InlineKeyboardButton("🎮 Music Games", callback_data="help_games"),
+         InlineKeyboardButton("🕹 Fun Games", callback_data="help_fungames")],
+    [InlineKeyboardButton("👤 My Account", callback_data="help_account")],
         [InlineKeyboardButton("📊 Stats & Info", callback_data="help_stats")]
     ])
     await m.reply(f"❓ **{BOT_NAME} Help Menu**\n\nChoose a category below 👇", reply_markup=keyboard)
@@ -2574,8 +2587,9 @@ async def start(_, m: Message):
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🎵 Download & Search", callback_data="help_download"),
          InlineKeyboardButton("🌍 Discover", callback_data="help_discover")],
-        [InlineKeyboardButton("🎮 Games & Fun", callback_data="help_games"),
-         InlineKeyboardButton("👤 My Account", callback_data="help_account")],
+        [InlineKeyboardButton("🎮 Music Games", callback_data="help_games"),
+         InlineKeyboardButton("🕹 Fun Games", callback_data="help_fungames")],
+    [InlineKeyboardButton("👤 My Account", callback_data="help_account")],
         [InlineKeyboardButton("📊 Stats & Info", callback_data="help_stats")]
     ])
     await m.reply(f"🎵 **Welcome to {BOT_NAME}!**\n"
@@ -3056,6 +3070,371 @@ async def send_daily_songs():
                             await send_song(msg_obj, song["name"], msg_obj)
                         except: pass
         await asyncio.sleep(60)
+
+# ==================== NEW GAMES ====================
+
+SLOT_EMOJIS = ["🍒", "🍋", "🍊", "💎", "7️⃣", "🎵", "⭐", "🔔"]
+SLOT_WINS = {
+    ("💎","💎","💎"): ("JACKPOT! 💎💎💎", 500),
+    ("7️⃣","7️⃣","7️⃣"): ("LUCKY 777! 🎰", 300),
+    ("🎵","🎵","🎵"): ("MUSIC WIN! 🎵", 200),
+    ("⭐","⭐","⭐"): ("TRIPLE STAR! ⭐", 150),
+}
+
+@app.on_message(filters.command("slots"))
+async def slots_cmd(_, m: Message):
+    import random as _r
+    s1, s2, s3 = _r.choice(SLOT_EMOJIS), _r.choice(SLOT_EMOJIS), _r.choice(SLOT_EMOJIS)
+    msg = await m.reply("🎰 Spinning...")
+    await asyncio.sleep(1)
+    result = f"🎰 **SLOTS**\n\n| {s1} | {s2} | {s3} |\n\n"
+    combo = (s1, s2, s3)
+    if combo in SLOT_WINS:
+        label, xp = SLOT_WINS[combo]
+        db.ensure_user(m.from_user.id, m.from_user.first_name)
+        db.add_xp(m.from_user.id, xp)
+        result += f"🎉 **{label}**\n✨ +{xp} XP!"
+    elif s1 == s2 or s2 == s3 or s1 == s3:
+        db.ensure_user(m.from_user.id, m.from_user.first_name)
+        db.add_xp(m.from_user.id, 50)
+        result += f"✅ **2 same! Small win!**\n✨ +50 XP!"
+    else:
+        result += "❌ **Koi match nahi! Try again!**"
+    result += "\n\n🎰 `/slots` — Dobara spin karo!"
+    await msg.edit(result)
+
+@app.on_message(filters.command("dice"))
+async def dice_cmd(_, m: Message):
+    parts = m.text.split(None, 1)
+    sides = 6
+    if len(parts) > 1:
+        try: sides = min(int(parts[1].strip()), 100)
+        except: pass
+    result = random.randint(1, sides)
+    emoji = "🎲" if sides == 6 else "🎯"
+    msg_text = f"{emoji} **Dice Roll! (1-{sides})**\n\n🎲 Result: **{result}**\n\n"
+    if sides == 6:
+        if result == 6: msg_text += "🔥 **Perfect roll!**"
+        elif result == 1: msg_text += "😅 **Lowest possible!**"
+        else: msg_text += f"Not bad!"
+    await m.reply(msg_text)
+
+@app.on_message(filters.command("guess"))
+async def guess_cmd(_, m: Message):
+    chat_id = m.chat.id
+    parts = m.text.split(None, 1)
+    # New game
+    if len(parts) < 2 or not parts[1].strip().isdigit():
+        if chat_id in active_guess:
+            g = active_guess[chat_id]
+            await m.reply(
+                f"🔢 **Game already active!**\n"
+                f"Attempts: {g['attempts']}\n"
+                f"Range: 1-100\n"
+                f"Reply with a number to guess!"
+            )
+        else:
+            number = random.randint(1, 100)
+            active_guess[chat_id] = {"number": number, "attempts": 0, "starter": m.from_user.first_name}
+            await m.reply(
+                f"🔢 **Number Guess!**\n\n"
+                f"Maine 1 se 100 ke beech ek number socha hai!\n\n"
+                f"💭 **Koi bhi number reply karo guess karne ke liye!**\n"
+                f"🏆 Jitne kam attempts utna better!"
+            )
+        return
+    # Guess attempt
+    if chat_id not in active_guess:
+        await m.reply("❌ Pehle `/guess` se game shuru karo!")
+        return
+    g = active_guess[chat_id]
+    guess = int(parts[1].strip())
+    g["attempts"] += 1
+    if guess == g["number"]:
+        del active_guess[chat_id]
+        db.ensure_user(m.from_user.id, m.from_user.first_name)
+        attempts = g["attempts"]
+        xp = max(10, 100 - (attempts-1)*10)
+        db.add_xp(m.from_user.id, xp)
+        await m.reply(
+            f"🎉 **Sahi! {m.from_user.first_name}!**\n\n"
+            f"Number tha: **{g['number']}**\n"
+            f"Attempts: **{attempts}**\n"
+            f"✨ +{xp} XP!\n\n"
+            f"🔢 `/guess` — Naya game!"
+        )
+    elif guess < g["number"]:
+        await m.reply(f"📈 **{guess}** — Isse **zyada** hai! (Attempt {g['attempts']})")
+    else:
+        await m.reply(f"📉 **{guess}** — Isse **kam** hai! (Attempt {g['attempts']})")
+
+# Text handler for guess game
+@app.on_message(filters.text & ~filters.command("") & filters.private)
+async def guess_text_handler(_, m: Message):
+    pass  # Handled by quiz handler below
+
+@app.on_message(filters.command("bomb"))
+async def bomb_cmd(_, m: Message):
+    if m.chat.type.name not in ("GROUP", "SUPERGROUP"):
+        await m.reply("❌ Group mein use karo!")
+        return
+    chat_id = m.chat.id
+    if chat_id in active_bomb:
+        await m.reply("💣 Bomb already active hai! `/passbomb @user` karo!")
+        return
+    timer = random.randint(30, 90)
+    active_bomb[chat_id] = {
+        "holder": m.from_user.id,
+        "name": m.from_user.first_name,
+        "timer": timer,
+        "start": asyncio.get_event_loop().time()
+    }
+    await m.reply(
+        f"💣 **BOMB GAME!**\n\n"
+        f"💣 Bomb is with: **{m.from_user.first_name}**\n"
+        f"⏱ Timer: **{timer} seconds** (hidden!)\n\n"
+        f"⚡ **Kisi ko pass karo: `/passbomb @username`**\n"
+        f"💥 Jiske haath mein phoota — wo haara!"
+    )
+    asyncio.create_task(_bomb_timer(chat_id, m, timer))
+
+async def _bomb_timer(chat_id, m, timer):
+    await asyncio.sleep(timer)
+    if chat_id in active_bomb:
+        bomb = active_bomb.pop(chat_id)
+        try:
+            await m.reply(
+                f"💥 **BOOM!**\n\n"
+                f"Bomb **{bomb['name']}** ke haath mein phoota!\n\n"
+                f"😂 **{bomb['name']} haara!**"
+            )
+        except: pass
+
+@app.on_message(filters.command("passbomb"))
+async def passbomb_cmd(_, m: Message):
+    chat_id = m.chat.id
+    if chat_id not in active_bomb:
+        await m.reply("❌ Koi active bomb nahi hai! `/bomb` se shuru karo!")
+        return
+    bomb = active_bomb[chat_id]
+    if bomb["holder"] != m.from_user.id:
+        await m.reply(f"❌ Bomb tumhare paas nahi hai! **{bomb['name']}** ke paas hai!")
+        return
+    if not m.reply_to_message:
+        await m.reply("❌ Kisi ke message pe reply karke `/passbomb` karo!")
+        return
+    target = m.reply_to_message.from_user
+    if target.id == m.from_user.id:
+        await m.reply("❌ Apne aap ko pass nahi kar sakte!")
+        return
+    bomb["holder"] = target.id
+    bomb["name"] = target.first_name
+    active_bomb[chat_id] = bomb
+    await m.reply(
+        f"💣 **Bomb passed!**\n\n"
+        f"💣 **{m.from_user.first_name}** ne **{target.first_name}** ko pass kiya!\n"
+        f"⚡ Jaldi pass karo ya BOOM! 💥"
+    )
+
+@app.on_message(filters.command("duel"))
+async def duel_cmd(_, m: Message):
+    if m.chat.type.name not in ("GROUP", "SUPERGROUP"):
+        await m.reply("❌ Group mein use karo!")
+        return
+    chat_id = m.chat.id
+    if chat_id in active_duel:
+        await m.reply("⚔️ Duel already chal raha hai!")
+        return
+    if not m.reply_to_message:
+        await m.reply(
+            "⚔️ **Duel Challenge!**\n\n"
+            "Kisi ke message pe reply karke `/duel` karo!"
+        )
+        return
+    p1 = m.from_user
+    p2 = m.reply_to_message.from_user
+    if p2.is_bot or p2.id == p1.id:
+        await m.reply("❌ Invalid opponent!")
+        return
+    active_duel[chat_id] = {
+        "p1": p1.id, "p1name": p1.first_name, "hp1": 100,
+        "p2": p2.id, "p2name": p2.first_name, "hp2": 100,
+        "turn": p1.id
+    }
+    await m.reply(
+        f"⚔️ **DUEL!**\n\n"
+        f"👤 **{p1.first_name}** (❤️ 100 HP)\n"
+        f"VS\n"
+        f"👤 **{p2.first_name}** (❤️ 100 HP)\n\n"
+        f"🗡 **{p1.first_name}** ka turn hai!\n"
+        f"⚔️ `/attack` — Attack karo (10-30 damage)\n"
+        f"🛡 `/defend` — Defend karo (next attack block)"
+    )
+
+duel_defending = {}  # {user_id: True}
+
+@app.on_message(filters.command("attack"))
+async def attack_cmd(_, m: Message):
+    chat_id = m.chat.id
+    if chat_id not in active_duel:
+        await m.reply("❌ Koi active duel nahi! `/duel @user` se challenge karo!")
+        return
+    duel = active_duel[chat_id]
+    if m.from_user.id != duel["turn"]:
+        other = duel["p1name"] if duel["turn"] == duel["p1"] else duel["p2name"]
+        await m.reply(f"❌ Tumhara turn nahi! **{other}** ka turn hai!")
+        return
+    damage = random.randint(10, 35)
+    attacker = m.from_user.first_name
+    if m.from_user.id == duel["p1"]:
+        defender_id, defender_name = duel["p2"], duel["p2name"]
+        hp_key = "hp2"
+    else:
+        defender_id, defender_name = duel["p1"], duel["p1name"]
+        hp_key = "hp1"
+    # Check if defending
+    if duel_defending.get(defender_id):
+        duel_defending.pop(defender_id)
+        await m.reply(f"🛡 **{defender_name}** ne attack block kar diya! 0 damage!")
+        duel["turn"] = defender_id
+        return
+    duel[hp_key] = max(0, duel[hp_key] - damage)
+    hp1, hp2 = duel["hp1"], duel["hp2"]
+    # Check win
+    if duel[hp_key] <= 0:
+        del active_duel[chat_id]
+        db.ensure_user(m.from_user.id, m.from_user.first_name)
+        db.add_xp(m.from_user.id, 100)
+        await m.reply(
+            f"⚔️ **{attacker}** hits **{defender_name}** for **{damage}** damage!\n\n"
+            f"💀 **{defender_name}** haara!\n\n"
+            f"🏆 **{attacker} WINS!** ✨ +100 XP!"
+        )
+        return
+    duel["turn"] = defender_id
+    active_duel[chat_id] = duel
+    await m.reply(
+        f"⚔️ **{attacker}** attacks **{defender_name}** — **{damage}** damage!\n\n"
+        f"❤️ {duel['p1name']}: **{hp1}** HP\n"
+        f"❤️ {duel['p2name']}: **{hp2}** HP\n\n"
+        f"🗡 **{defender_name}** ka turn!\n"
+        f"⚔️ `/attack` ya 🛡 `/defend`"
+    )
+
+@app.on_message(filters.command("defend"))
+async def defend_cmd(_, m: Message):
+    chat_id = m.chat.id
+    if chat_id not in active_duel:
+        await m.reply("❌ Koi active duel nahi!")
+        return
+    duel = active_duel[chat_id]
+    if m.from_user.id != duel["turn"]:
+        await m.reply("❌ Tumhara turn nahi!")
+        return
+    duel_defending[m.from_user.id] = True
+    if m.from_user.id == duel["p1"]:
+        duel["turn"] = duel["p2"]
+        other = duel["p2name"]
+    else:
+        duel["turn"] = duel["p1"]
+        other = duel["p1name"]
+    active_duel[chat_id] = duel
+    await m.reply(
+        f"🛡 **{m.from_user.first_name}** defend mode mein hai!\n"
+        f"Next attack block ho jayega!\n\n"
+        f"⚔️ **{other}** ka turn!"
+    )
+
+# Wordle game
+WORDLE_WORDS = [
+    "MUSIC", "BEATS", "NOTES", "TUNES", "SONGS", "ALBUM", "LYRIC",
+    "DANCE", "PIANO", "VOCAL", "GENRE", "BANDS", "DRUMS", "FLUTE",
+    "SOUND", "AUDIO", "RADIO", "DISCO", "BLUES", "JAZZY", "CHART",
+    "REMIX", "TRACK", "STAGE", "TEMPO", "PITCH", "CHORD", "SYNTH",
+    "MANIA", "DREAM", "HEART", "FLAME", "NIGHT", "LIGHT", "SHINE",
+    "STORM", "GHOST", "BRAVE", "GRACE", "POWER", "MAGIC", "SMILE",
+    "LAUGH", "TEARS", "BLOOM", "SPARK", "BLAZE", "RIVER", "OCEAN",
+]
+
+@app.on_message(filters.command("wordle"))
+async def wordle_cmd(_, m: Message):
+    user_id = m.from_user.id
+    parts = m.text.split(None, 1)
+    if len(parts) < 2 or not parts[1].strip():
+        # Start new game
+        if user_id in active_wordle:
+            w = active_wordle[user_id]
+            attempts_left = 6 - len(w["attempts"])
+            await m.reply(
+                f"🟩 **Wordle — Game Active!**\n\n"
+                f"5-letter word guess karo!\n"
+                f"Attempts left: **{attempts_left}/6**\n\n"
+                f"Previous guesses:\n" + 
+                "\n".join(w["attempts"]) +
+                f"\n\n`/wordle GUESS` — e.g. `/wordle MUSIC`"
+            )
+            return
+        word = random.choice(WORDLE_WORDS)
+        active_wordle[user_id] = {"word": word, "attempts": []}
+        await m.reply(
+            f"🟩 **WORDLE!**\n\n"
+            f"5-letter English word guess karo!\n\n"
+            f"🟩 = Sahi letter, sahi jagah\n"
+            f"🟨 = Letter hai, galat jagah\n"
+            f"⬜ = Letter nahi hai\n\n"
+            f"6 attempts milte hain!\n\n"
+            f"`/wordle MUSIC` — aise guess karo!"
+        )
+        return
+    guess = parts[1].strip().upper()
+    if len(guess) != 5 or not guess.isalpha():
+        await m.reply("❌ Sirf 5-letter English word guess karo!")
+        return
+    if user_id not in active_wordle:
+        await m.reply("❌ Pehle `/wordle` se game shuru karo!")
+        return
+    w = active_wordle[user_id]
+    word = w["word"]
+    # Generate colored result
+    result = ""
+    for i, ch in enumerate(guess):
+        if ch == word[i]:
+            result += "🟩"
+        elif ch in word:
+            result += "🟨"
+        else:
+            result += "⬜"
+    attempt_line = f"{result} {guess}"
+    w["attempts"].append(attempt_line)
+    active_wordle[user_id] = w
+    attempts_used = len(w["attempts"])
+    if guess == word:
+        del active_wordle[user_id]
+        db.ensure_user(user_id, m.from_user.first_name)
+        xp = max(20, 120 - (attempts_used-1)*20)
+        db.add_xp(user_id, xp)
+        await m.reply(
+            f"🎉 **SAHI! {m.from_user.first_name}!**\n\n"
+            + "\n".join(w["attempts"]) +
+            f"\n\n🟩 Word: **{word}**\n"
+            f"Attempts: **{attempts_used}/6**\n"
+            f"✨ +{xp} XP!\n\n"
+            f"🟩 `/wordle` — Naya game!"
+        )
+    elif attempts_used >= 6:
+        del active_wordle[user_id]
+        await m.reply(
+            f"💀 **Game Over!**\n\n"
+            + "\n".join(w["attempts"]) +
+            f"\n\n🔤 Word tha: **{word}**\n"
+            f"🟩 `/wordle` — Try again!"
+        )
+    else:
+        await m.reply(
+            f"{'\n'.join(w['attempts'])}\n\n"
+            f"Attempts: **{attempts_used}/6**\n"
+            f"`/wordle GUESS` — Next guess!"
+        )
 
 async def main():
     await app.start()
