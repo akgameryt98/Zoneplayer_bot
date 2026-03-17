@@ -1025,12 +1025,18 @@ async def chat_cmd(_, m: Message):
             )
             return r.json()
         data = await asyncio.to_thread(call_groq)
-        reply_text = data["choices"][0]["message"]["content"].strip()
-        # Save assistant reply to history
-        chat_histories[user_id].append({"role": "assistant", "content": reply_text})
-        await msg.edit(f"💬 {reply_text}")
+        if "choices" in data:
+            reply_text = data["choices"][0]["message"]["content"].strip()
+            chat_histories[user_id].append({"role": "assistant", "content": reply_text})
+            await msg.edit(f"💬 {reply_text}")
+        else:
+            # Log actual error
+            err = data.get("error", {}).get("message", str(data))
+            print(f"[GROQ ERROR] {err}")
+            await msg.edit(f"❌ API Error: `{err[:80]}`")
     except Exception as e:
-        await msg.edit(f"❌ Error: `{str(e)[:50]}`\nDobara try karo!")
+        print(f"[GROQ EXCEPTION] {e}")
+        await msg.edit(f"❌ Error: `{str(e)[:80]}`\nDobara try karo!")
 
 @app.on_message(filters.command("clearchat"))
 async def clearchat(_, m: Message):
