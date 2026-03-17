@@ -2870,7 +2870,7 @@ async def main():
     print(f"[DEBUG] USER_API_ID: {USER_API_ID}")
     print(f"[DEBUG] userbot: {userbot is not None}")
     print(f"[DEBUG] pytgcalls: {pytgcalls is not None}")
-    print(f"[DEBUG] PyTgCalls class: {PyTgCalls is not None}")
+    print(f"[DEBUG] pytgcalls obj: {pytgcalls is not None}")
 
     # Start userbot + pytgcalls if configured
     if userbot:
