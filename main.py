@@ -2889,6 +2889,13 @@ async def main():
     await app.start()
     db.init_db()
     print(f"✅ {BOT_NAME} started!")
+    
+    # Debug env vars
+    print(f"[DEBUG] USER_STRING set: {bool(USER_STRING)}")
+    print(f"[DEBUG] USER_API_ID: {USER_API_ID}")
+    print(f"[DEBUG] userbot: {userbot is not None}")
+    print(f"[DEBUG] pytgcalls: {pytgcalls is not None}")
+    print(f"[DEBUG] PyTgCalls class: {PyTgCalls is not None}")
 
     # Start userbot + pytgcalls if configured
     if userbot and pytgcalls:
@@ -2912,17 +2919,29 @@ async def main():
                         await pytgcalls.leave_group_call(chat_id)
                     except: pass
 
-            # Start userbot first, then pytgcalls
+            # Start userbot first
+            print("[VC] Starting userbot...")
             await userbot.start()
             print("✅ Userbot started!")
-            await pytgcalls.start()
+            
+            # Start pytgcalls - try both sync and async
+            print("[VC] Starting pytgcalls...")
+            try:
+                result = pytgcalls.start()
+                if hasattr(result, '__await__'):
+                    await result
+            except Exception as e:
+                print(f"[VC] pytgcalls.start() error: {e}")
             print("✅ PyTgCalls started!")
+            
+            # Print all methods
             methods = [m for m in dir(pytgcalls) if not m.startswith('_')]
-            print(f"[VC] Available methods: {methods}")
-            vc_started = True
+            print(f"[VC] Methods: {methods}")
 
         except Exception as e:
-            print(f"⚠️ Userbot/VC failed to start: {e}")
+            import traceback
+            print(f"⚠️ VC Error: {e}")
+            print(traceback.format_exc())
     else:
         print("⚠️ USER_STRING_SESSION not set — VC disabled")
 
