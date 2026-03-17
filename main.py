@@ -1016,7 +1016,7 @@ async def chat_cmd(_, m: Message):
                     "Content-Type": "application/json"
                 },
                 json={
-                    "model": "llama3-8b-8192",
+                    "model": "llama-3.3-70b-versatile",
                     "messages": messages,
                     "max_tokens": 300,
                     "temperature": 0.8,
