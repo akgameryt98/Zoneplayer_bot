@@ -10,12 +10,6 @@ import database as db
 import apis
 
 
-
-
-
-
-
-
 app = Client("beatnova_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 BOT_NAME = "BeatNova"
@@ -29,6 +23,46 @@ today_downloads = {"count": 0, "date": datetime.date.today()}
 
 
 PLACEHOLDERS = ["[song]", "[song name]", "[name]", "[artist]", "[line]", "[mood]", "[type]", "[a-z]"]
+
+# Large quiz song pools for variety
+QUIZ_QUERIES = [
+    "hindi popular songs hits",
+    "bollywood romantic songs",
+    "punjabi hits popular",
+    "arijit singh songs",
+    "atif aslam songs",
+    "jubin nautiyal songs",
+    "neha kakkar songs",
+    "armaan malik songs",
+    "shreya ghoshal songs",
+    "sonu nigam songs",
+    "kumar sanu songs",
+    "udit narayan songs",
+    "lata mangeshkar songs",
+    "kishore kumar songs",
+    "mohd rafi songs",
+    "90s hindi songs",
+    "2000s bollywood songs",
+    "2010s hindi hits",
+    "sad hindi songs",
+    "party hindi songs",
+    "romantic hindi songs",
+    "new hindi songs 2024",
+    "ap dhillon songs",
+    "diljit dosanjh songs",
+    "badshah songs",
+    "yo yo honey singh",
+    "anuv jain songs",
+    "vishal mishra songs",
+    "darshan raval songs",
+    "b praak songs",
+    "english pop hits",
+    "ed sheeran songs",
+    "taylor swift songs",
+    "the weeknd songs",
+    "coldplay songs",
+    "imagine dragons songs",
+]
 
 MUSIC_FACTS = [
     "🎵 The longest officially released song is over 13 hours long!",
@@ -546,12 +580,31 @@ async def help_category(_, cb):
         ),
         "games": (
             "🎮 **Games & Fun**\n\n"
-            "⚖️ `/compare`\n📅 `/challenge`\n🎯 `/fillblank`\n🎯 `/guesssong`\n"
-            "🎮 `/musicquiz`\n🎤 `/artistquiz`\n💬 `/quote`\n⭐ `/rate`\n🏆 `/topsongs`\n"
-            "🏆 `/tournament`\n📅 `/yeargame`\n🎵 `/musicfact`\n🥚 `/easteregg`\n🔮 `/secret`\n\n"
-            "**👥 Group Commands:**\n"
-            "🎮 `/groupquiz`\n🎵 `/songbattle`\n📊 `/votesong`\n🎉 `/party`\n"
-            "➕ `/addsong`\n⏭ `/skipparty`\n🛑 `/stopparty`\n📋 `/partyqueue`"
+            "🎯 `/guesssong` — Lyrics se song guess karo\n"
+            "🎮 `/musicquiz` — A/B/C/D music quiz\n"
+            "🎤 `/artistquiz` — Kaunse artist ne gaaya?\n"
+            "🎯 `/fillblank` — Lyrics mein blank bharo\n"
+            "📅 `/yeargame` — Song ka year guess karo\n"
+            "📅 `/challenge` — Aaj ka daily challenge\n"
+            "🏆 `/tournament` — Song tournament\n"
+            "⚖️ `/compare [s1] | [s2]` — Songs compare karo\n"
+            "💬 `/quote` — Music quote\n"
+            "🎵 `/musicfact` — Random music fact\n"
+            "🥚 `/easteregg` — Hidden easter egg\n"
+            "🔮 `/secret` — Secret message\n\n"
+            "**👥 Group Games:**\n"
+            "🎮 `/groupquiz` — Group quiz\n"
+            "⚔️ `/songbattle [s1] | [s2]` — Song battle vote\n"
+            "📊 `/votesong` — Group song vote\n\n"
+            "**🎉 Party Mode:**\n"
+            "🎉 `/party` — Party mode shuru karo\n"
+            "➕ `/addsong [song]` — Queue mein add karo\n"
+            "📋 `/partyqueue` — Queue dekho\n"
+            "⏭ `/skipparty` — Skip karo\n"
+            "🛑 `/stopparty` — Party band karo\n\n"
+            "**⭐ Ratings:**\n"
+            "⭐ `/rate [song]` — Song rate karo\n"
+            "🏆 `/topsongs` — Top rated songs"
         ),
         "account": (
             "👤 **My Account**\n\n"
@@ -776,23 +829,64 @@ async def artistinfo(_, m: Message):
     text += f"\n🎵 `/topartist {query}` | `/similarartist {query}`"
     await msg.edit(text)
 
+# Fallback artist pool for quiz options
+ARTIST_POOL = [
+    "Arijit Singh", "Neha Kakkar", "Jubin Nautiyal", "Shreya Ghoshal",
+    "Atif Aslam", "Armaan Malik", "Darshan Raval", "B Praak",
+    "Vishal Mishra", "Anuv Jain", "KK", "Sonu Nigam",
+    "Udit Narayan", "Kumar Sanu", "Alka Yagnik", "Sunidhi Chauhan",
+    "Diljit Dosanjh", "AP Dhillon", "Badshah", "Guru Randhawa",
+    "Honey Singh", "Jass Manak", "Sidhu Moosewala", "Harrdy Sandhu",
+    "Ed Sheeran", "Taylor Swift", "The Weeknd", "Bruno Mars",
+    "Justin Bieber", "Coldplay", "Imagine Dragons", "Maroon 5",
+]
+
 @app.on_message(filters.command("artistquiz"))
 async def artistquiz(_, m: Message):
     msg = await m.reply("🎤 **Preparing Artist Quiz...**")
     chat_id = m.chat.id
-    results = search_jiosaavn_multiple("popular bollywood songs", 20)
-    if not results:
+    q1 = random.choice(QUIZ_QUERIES)
+    q2 = random.choice([q for q in QUIZ_QUERIES if q != q1])
+    results = search_jiosaavn_multiple(q1, 15)
+    results += search_jiosaavn_multiple(q2, 10)
+    seen, unique = set(), []
+    for s in results:
+        if s["name"] not in seen:
+            seen.add(s["name"])
+            unique.append(s)
+    if not unique:
         await msg.edit("❌ Could not fetch!")
         return
-    correct = random.choice(results)
+    correct = random.choice(unique)
     correct_song = correct["name"]
-    correct_artist = correct["primaryArtists"].split(",")[0].strip()
-    wrong_artists = list(set([s["primaryArtists"].split(",")[0].strip() for s in results if s["primaryArtists"].split(",")[0].strip() != correct_artist]))
-    options = [correct_artist] + random.sample(wrong_artists, min(3, len(wrong_artists)))
+    correct_artist = correct.get("primaryArtists", correct.get("artist","Unknown")).split(",")[0].strip()
+    # Get wrong artists from results
+    wrong_from_results = list(set([
+        s.get("primaryArtists", s.get("artist","")).split(",")[0].strip()
+        for s in unique
+        if s.get("primaryArtists", s.get("artist","")).split(",")[0].strip() != correct_artist
+    ]))
+    # Also add from pool for variety
+    wrong_from_pool = [a for a in ARTIST_POOL if a.lower() != correct_artist.lower()]
+    all_wrong = list(set(wrong_from_results + wrong_from_pool))
+    random.shuffle(all_wrong)
+    wrong_options = all_wrong[:3]
+    # Always ensure exactly 4 options
+    options = [correct_artist] + wrong_options
+    while len(options) < 4:
+        options.append(random.choice(ARTIST_POOL))
+    options = options[:4]
     random.shuffle(options)
+    if correct_artist not in options:
+        options[0] = correct_artist
+        random.shuffle(options)
     labels = ["A", "B", "C", "D"]
-    active_quiz[chat_id] = {"answer": correct_artist.lower(), "title": correct_song, "artist": correct_artist, "type": "artistquiz", "options": options}
-    text = f"🎤 **Artist Quiz!**\n\n🎵 **Song:** {correct_song}\n\n❓ **Who sang this?**\n\n"
+    correct_idx = options.index(correct_artist)
+    active_quiz[chat_id] = {
+        "answer": correct_artist.lower(), "title": correct_song,
+        "artist": correct_artist, "type": "artistquiz", "options": options
+    }
+    text = f"🎤 **Artist Quiz!**\n\n🎵 **Song:** {correct_song}\n\n❓ **Kisne gaaya ye song?**\n\n"
     for i, opt in enumerate(options):
         text += f"**{labels[i]}.** {opt}\n"
     text += "\n💭 Reply A, B, C or D!\n⏱ 20 seconds!"
@@ -800,8 +894,7 @@ async def artistquiz(_, m: Message):
     await asyncio.sleep(20)
     if chat_id in active_quiz and active_quiz[chat_id].get("type") == "artistquiz":
         del active_quiz[chat_id]
-        idx = options.index(correct_artist) if correct_artist in options else 0
-        await m.reply(f"⏱ **Time's up!**\nAnswer: **{labels[idx]}. {correct_artist}**")
+        await m.reply(f"⏱ **Time's up!**\nAnswer: **{labels[correct_idx]}. {correct_artist}**")
 
 # B
 
@@ -1103,33 +1196,60 @@ async def show_favorites(_, m: Message):
 async def fillblank(_, m: Message):
     msg = await m.reply("🎯 **Preparing Fill-in-the-Blank...**")
     chat_id = m.chat.id
-    results = search_jiosaavn_multiple("popular hindi songs", 15)
+    # Try multiple queries to find song with lyrics
+    query = random.choice(QUIZ_QUERIES)
+    results = search_jiosaavn_multiple(query, 20)
     if not results:
-        await msg.edit("❌ Could not fetch!")
+        await msg.edit("❌ Could not fetch! Try again.")
         return
-    song = random.choice(results)
-    title, artist = song["name"], song["primaryArtists"]
-    lyrics_text, _ = get_lyrics(f"{title} - {artist}")
-    if not lyrics_text:
-        await msg.edit("❌ Could not get lyrics! Try again.")
+    random.shuffle(results)
+    found = False
+    for attempt in range(8):
+        song = results[attempt % len(results)]
+        title = song["name"]
+        artist = song.get("primaryArtists", song.get("artist", "Unknown"))
+        lyrics_text, _ = get_lyrics(f"{title} - {artist}")
+        if not lyrics_text:
+            # Try without artist
+            lyrics_text, _ = get_lyrics(title)
+        if lyrics_text:
+            lines = [l.strip() for l in lyrics_text.split("\n")
+                    if len(l.strip()) > 20 and not l.strip().startswith("[")
+                    and not l.strip().startswith("(")]
+            # Need line with at least 4 words
+            good_lines = [l for l in lines if len(l.split()) >= 4]
+            if good_lines:
+                found = True
+                break
+    if not found:
+        await msg.edit("❌ Could not get lyrics! `/guesssong` try karo.")
         return
-    lines = [l.strip() for l in lyrics_text.split("\n") if len(l.strip()) > 25]
-    if not lines:
-        await msg.edit("❌ Could not get lyrics! Try again.")
-        return
-    line = random.choice(lines[:15])
+    line = random.choice(good_lines[:20])
     words = line.split()
-    blank_idx = random.randint(1, len(words)-2)
-    answer = words[blank_idx].lower().strip(",.!?")
-    words[blank_idx] = "______"
-    blanked = " ".join(words)
+    # Pick a meaningful word (not too short)
+    meaningful = [(i, w) for i, w in enumerate(words) if len(w.strip(",. !?")) >= 3 and i not in [0, len(words)-1]]
+    if not meaningful:
+        await msg.edit("❌ Could not prepare question! Try again.")
+        return
+    blank_idx, blank_word = random.choice(meaningful)
+    answer = blank_word.lower().strip(",. !?")
+    words_copy = words.copy()
+    words_copy[blank_idx] = "______"
+    blanked = " ".join(words_copy)
     active_quiz[chat_id] = {"answer": answer, "title": title, "artist": artist, "type": "fillblank"}
-    await msg.edit(f"🎯 **Fill in the Blank!**\n\n🎵 **Song:** {title}\n👤 **Artist:** {artist}\n\n"
-                   f"**Complete the lyric:**\n_{blanked}_\n\n💭 Reply with the missing word!\n⏱ 20 seconds!")
-    await asyncio.sleep(20)
+    await msg.edit(
+        f"🎯 **Fill in the Blank!**\n\n"
+        f"🎵 **Song:** {title}\n"
+        f"👤 **Artist:** {artist}\n\n"
+        f"**Complete the lyric:**\n\n"
+        f"_{blanked}_\n\n"
+        f"💭 Missing word reply karo!\n"
+        f"⏱ 25 seconds! | `/skip` to skip"
+    )
+    await asyncio.sleep(25)
     if chat_id in active_quiz and active_quiz[chat_id].get("type") == "fillblank":
         del active_quiz[chat_id]
-        await m.reply(f"⏱ **Time's up!**\nAnswer: **{answer}**\nSong: **{title}** by {artist}")
+        await m.reply(f"⏱ **Time's up!**\nAnswer: **{answer}**\n🎵 {title} — {artist}")
 
 @app.on_message(filters.command("findlyrics"))
 async def findlyrics(_, m: Message):
@@ -1238,27 +1358,85 @@ async def groupquiz(_, m: Message):
     if m.chat.type.name not in ("GROUP", "SUPERGROUP"):
         await m.reply("❌ Group mein use karo!")
         return
-    msg = await m.reply("🎮 **Group Music Quiz Starting!**\n\nSabse pehle jawab do — winner hoga! 🏆")
+    msg = await m.reply("🎮 **Group Quiz shuru ho raha hai...**")
     chat_id = m.chat.id
-    results = search_jiosaavn_multiple("popular hindi bollywood songs", 20)
-    if not results:
-        await msg.edit("❌ Could not fetch!")
+    # Rotate quiz types for group
+    group_quiz_type = random.choice(["lyrics_guess", "musicquiz_group", "lyrics_guess"])
+    query = random.choice(QUIZ_QUERIES)
+    results = search_jiosaavn_multiple(query, 20)
+    results += search_jiosaavn_multiple(random.choice(QUIZ_QUERIES), 10)
+    seen, unique = set(), []
+    for s in results:
+        if s["name"] not in seen:
+            seen.add(s["name"])
+            unique.append(s)
+    if not unique:
+        await msg.edit("❌ Could not fetch! Try again.")
         return
-    correct = random.choice(results)
-    title, artist = correct["name"], correct["primaryArtists"]
-    lyrics_text, _ = get_lyrics(f"{title} - {artist}")
-    if lyrics_text:
-        lines = [l.strip() for l in lyrics_text.split("\n") if len(l.strip()) > 20]
-        line = random.choice(lines[:10]) if lines else f"Artist: **{artist}**"
+    if group_quiz_type == "musicquiz_group":
+        # MCQ style for group
+        correct = random.choice(unique)
+        title = correct["name"]
+        artist = correct.get("primaryArtists", correct.get("artist","Unknown")).split(",")[0].strip()
+        wrong_pool = [s for s in unique if s["name"] != title]
+        wrong_options = random.sample(wrong_pool, min(3, len(wrong_pool)))
+        options = [title] + [s["name"] for s in wrong_options]
+        while len(options) < 4:
+            options.append("Unknown Song")
+        options = options[:4]
+        random.shuffle(options)
+        correct_idx = options.index(title)
+        labels = ["A", "B", "C", "D"]
+        active_quiz[chat_id] = {
+            "answer": title.lower(), "title": title,
+            "artist": artist, "type": "quiz", "options": options
+        }
+        text = f"🎮 **Group Quiz!** 👥\n\n👤 **Artist:** {artist}\n\n❓ **Kaunsa song hai is artist ka?**\n\n"
+        for i, opt in enumerate(options):
+            text += f"**{labels[i]}.** {opt}\n"
+        text += "\n💭 Sabse pehle A/B/C/D reply karo!\n⏱ 30 seconds! 🏆"
+        await msg.edit(text)
+        await asyncio.sleep(30)
+        if chat_id in active_quiz and active_quiz[chat_id].get("type") == "quiz":
+            del active_quiz[chat_id]
+            await m.reply(f"⏱ **Time's up!**\nAnswer: **{labels[correct_idx]}. {title}** by {artist}")
     else:
-        line = f"Artist: **{artist}**"
-    active_quiz[chat_id] = {"answer": title.lower(), "title": title, "artist": artist, "type": "guess"}
-    await msg.edit(f"🎮 **Group Quiz!** 👥\n\n🎵 **Lyrics:**\n_{line}_\n\n"
-                   f"💭 **Sabse pehle sahi answer karega wo jitega!**\n⏱ 30 seconds!")
-    await asyncio.sleep(30)
-    if chat_id in active_quiz and active_quiz[chat_id].get("type") == "guess":
-        del active_quiz[chat_id]
-        await m.reply(f"⏱ **Time's up! Kisi ne sahi answer nahi diya!**\nAnswer: **{title}** by {artist}")
+        # Lyrics guess - find song with good lyrics
+        found = False
+        for attempt in range(8):
+            correct = unique[attempt % len(unique)]
+            title = correct["name"]
+            artist = correct.get("primaryArtists", correct.get("artist","Unknown"))
+            lyrics_text, _ = get_lyrics(f"{title} - {artist}")
+            if lyrics_text:
+                lines = [l.strip() for l in lyrics_text.split("\n")
+                        if len(l.strip()) > 25 and not l.strip().startswith("[")]
+                if len(lines) >= 2:
+                    found = True
+                    break
+        if not found:
+            await msg.edit("❌ Lyrics nahi mile! `/musicquiz` try karo.")
+            return
+        line = random.choice(lines[:15])
+        active_quiz[chat_id] = {"answer": title.lower(), "title": title, "artist": artist, "type": "guess"}
+        await msg.edit(
+            f"🎮 **Group Guess The Song!** 👥\n\n"
+            f"🎵 **In lyrics ka song guess karo:**\n\n"
+            f"_{line}_\n\n"
+            f"💭 **Sabse pehle sahi answer karega wo jitega!** 🏆\n"
+            f"⏱ 30 seconds!"
+        )
+        await asyncio.sleep(15)
+        if chat_id in active_quiz and active_quiz[chat_id].get("type") == "guess":
+            # Hint after 15 sec
+            try:
+                other_line = random.choice([l for l in lines if l != line][:10]) if len(lines) > 1 else line
+                await m.reply(f"💡 **Hint:** _{other_line}_")
+            except: pass
+        await asyncio.sleep(15)
+        if chat_id in active_quiz and active_quiz[chat_id].get("type") == "guess":
+            del active_quiz[chat_id]
+            await m.reply(f"⏱ **Time's up! Kisi ne sahi jawab nahi diya!**\n🎵 Answer: **{title}**\n👤 {artist}")
 
 @app.on_message(filters.command("groupstats"))
 async def groupstats(_, m: Message):
@@ -1280,25 +1458,58 @@ async def groupstats(_, m: Message):
 async def guesssong(_, m: Message):
     msg = await m.reply("🎯 **Fetching quiz song...**")
     chat_id = m.chat.id
-    results = search_jiosaavn_multiple("popular hindi songs", 15)
+    # Use diverse random query
+    query = random.choice(QUIZ_QUERIES)
+    results = search_jiosaavn_multiple(query, 20)
     if not results:
-        await msg.edit("❌ Could not fetch!")
+        await msg.edit("❌ Could not fetch! Try again.")
         return
-    song = random.choice(results)
-    title, artist = song["name"], song["primaryArtists"]
-    lyrics_text, _ = get_lyrics(f"{title} - {artist}")
-    if lyrics_text:
-        lines = [l.strip() for l in lyrics_text.split("\n") if len(l.strip()) > 20]
-        line = random.choice(lines[:10]) if lines else f"Hint: Artist is **{artist}**"
-    else:
-        line = f"Hint: Artist is **{artist}**"
-    active_quiz[chat_id] = {"answer": title.lower(), "title": title, "artist": artist, "type": "guess"}
-    await msg.edit(f"🎯 **Guess The Song!**\n\n🎵 **Lyrics:**\n_{line}_\n\n"
-                   f"💭 Reply with song name!\n⏱ 30 seconds!\nUse `/skip` to skip.")
-    await asyncio.sleep(30)
+    # Try multiple songs to find one with good lyrics
+    random.shuffle(results)
+    found = False
+    for attempt in range(5):
+        song = results[attempt % len(results)]
+        title, artist = song["name"], song.get("primaryArtists", song.get("artist", "Unknown"))
+        lyrics_text, _ = get_lyrics(f"{title} - {artist}")
+        if lyrics_text:
+            lines = [l.strip() for l in lyrics_text.split("\n") 
+                    if len(l.strip()) > 25 and not l.strip().startswith("[")]
+            if len(lines) >= 3:
+                found = True
+                break
+    if not found:
+        await msg.edit("❌ Could not get good lyrics! Try again.")
+        return
+    # Pick a random lyric line as hint
+    line = random.choice(lines[:20])
+    # Scramble artist name slightly as extra hint
+    active_quiz[chat_id] = {
+        "answer": title.lower(), "title": title,
+        "artist": artist, "type": "guess",
+        "hint_used": False
+    }
+    await msg.edit(
+        f"🎯 **Guess The Song!**\n\n"
+        f"🎵 **Fill in the lyrics:**\n\n"
+        f"_{line}_\n\n"
+        f"💭 Song ka naam reply karo!\n"
+        f"⏱ 30 seconds! | `/skip` to skip"
+    )
+    await asyncio.sleep(15)
+    # Give hint after 15 sec
+    if chat_id in active_quiz and active_quiz[chat_id].get("type") == "guess":
+        first_letter = title[0].upper()
+        hint_line = random.choice([l for l in lines if l != line][:10]) if len(lines) > 1 else line
+        try:
+            await m.reply(
+                f"💡 **Hint:** Song ka pehla letter **'{first_letter}'** hai!\n"
+                f"🎵 Another line: _{hint_line}_"
+            )
+        except: pass
+    await asyncio.sleep(15)
     if chat_id in active_quiz and active_quiz[chat_id].get("type") == "guess":
         del active_quiz[chat_id]
-        await m.reply(f"⏱ **Time's up!**\nAnswer: **{title}** by {artist}")
+        await m.reply(f"⏱ **Time's up!**\n🎵 Answer: **{title}**\n👤 Artist: {artist}")
 
 # H
 
@@ -1532,29 +1743,114 @@ async def musicmatch(_, m: Message):
 async def musicquiz(_, m: Message):
     msg = await m.reply("🎮 **Preparing Music Quiz...**")
     chat_id = m.chat.id
-    results = search_jiosaavn_multiple("popular bollywood songs", 20)
-    if not results:
-        await msg.edit("❌ Could not fetch!")
+
+    # Fetch from 2 different random queries for variety
+    q1 = random.choice(QUIZ_QUERIES)
+    q2 = random.choice([q for q in QUIZ_QUERIES if q != q1])
+    results = search_jiosaavn_multiple(q1, 15)
+    results += search_jiosaavn_multiple(q2, 10)
+    
+    # Deduplicate
+    seen, unique = set(), []
+    for s in results:
+        if s["name"] not in seen:
+            seen.add(s["name"])
+            unique.append(s)
+    
+    if len(unique) < 4:
+        await msg.edit("❌ Could not fetch enough songs! Try again.")
         return
-    correct_song = random.choice(results)
-    correct_title = correct_song["name"]
-    correct_artist = correct_song["primaryArtists"]
-    wrong_songs = [s for s in results if s["name"] != correct_title]
-    wrong_options = random.sample(wrong_songs, min(3, len(wrong_songs)))
-    options = [correct_title] + [s["name"] for s in wrong_options]
-    random.shuffle(options)
-    correct_idx = options.index(correct_title)
-    labels = ["A", "B", "C", "D"]
-    active_quiz[chat_id] = {"answer": correct_title.lower(), "title": correct_title, "artist": correct_artist, "type": "quiz", "options": options}
-    text = f"🎮 **Music Quiz!**\n\n👤 **Artist:** {correct_artist}\n\n❓ **Which song is by this artist?**\n\n"
-    for i, opt in enumerate(options):
+
+    # Quiz type rotation: song→artist, artist→song, year→song
+    quiz_types = ["which_song", "which_artist", "which_year"]
+    quiz_type = random.choice(quiz_types)
+    
+    correct = random.choice(unique)
+    correct_title = correct["name"]
+    correct_artist = correct.get("primaryArtists", correct.get("artist", "Unknown"))
+    correct_year = str(correct.get("year", "Unknown"))
+    
+    wrong_pool = [s for s in unique if s["name"] != correct_title]
+    
+    if quiz_type == "which_song" or len(wrong_pool) < 3:
+        # Q: Artist diya, song guess karo
+        wrong_options = random.sample(wrong_pool, min(3, len(wrong_pool)))
+        options = [correct_title] + [s["name"] for s in wrong_options]
+        random.shuffle(options)
+        correct_idx = options.index(correct_title)
+        labels = ["A", "B", "C", "D"]
+        question = f"👤 **Artist:** {correct_artist.split(',')[0].strip()}\n\n❓ **Kaunsa song hai is artist ka?**"
+        answer = correct_title.lower()
+        answer_display = f"{labels[correct_idx]}. {correct_title}"
+
+    elif quiz_type == "which_artist":
+        # Q: Song diya, artist guess karo
+        wrong_artists = list(set([
+            s.get("primaryArtists", s.get("artist","")).split(",")[0].strip()
+            for s in wrong_pool
+            if s.get("primaryArtists", s.get("artist","")).split(",")[0].strip() != correct_artist.split(",")[0].strip()
+        ]))
+        if len(wrong_artists) < 3:
+            wrong_artists = wrong_artists + ["Arijit Singh", "Neha Kakkar", "Jubin Nautiyal"]
+            wrong_artists = [a for a in wrong_artists if a != correct_artist.split(",")[0].strip()]
+        wrong_artists = random.sample(wrong_artists, min(3, len(wrong_artists)))
+        correct_a = correct_artist.split(",")[0].strip()
+        options = [correct_a] + wrong_artists[:3]
+        random.shuffle(options)
+        correct_idx = options.index(correct_a)
+        labels = ["A", "B", "C", "D"]
+        question = f"🎵 **Song:** {correct_title}\n\n❓ **Kaunse artist ne ye gaaya?**"
+        answer = correct_a.lower()
+        answer_display = f"{labels[correct_idx]}. {correct_a}"
+    
+    else:
+        # Q: Song diya, year guess karo
+        if correct_year == "Unknown":
+            quiz_type = "which_song"
+            wrong_options = random.sample(wrong_pool, min(3, len(wrong_pool)))
+            options = [correct_title] + [s["name"] for s in wrong_options]
+            random.shuffle(options)
+            correct_idx = options.index(correct_title)
+            labels = ["A", "B", "C", "D"]
+            question = f"👤 **Artist:** {correct_artist.split(',')[0].strip()}\n\n❓ **Kaunsa song hai is artist ka?**"
+            answer = correct_title.lower()
+            answer_display = f"{labels[correct_idx]}. {correct_title}"
+        else:
+            try:
+                yr = int(correct_year)
+                year_options = [str(yr), str(yr-1), str(yr+1), str(yr-2)]
+                random.shuffle(year_options)
+                correct_idx = year_options.index(str(yr))
+                labels = ["A", "B", "C", "D"]
+                options = year_options
+                question = f"🎵 **Song:** {correct_title}\n👤 {correct_artist.split(',')[0].strip()}\n\n❓ **Kab release hua ye song?**"
+                answer = str(yr)
+                answer_display = f"{labels[correct_idx]}. {yr}"
+            except:
+                wrong_options = random.sample(wrong_pool, min(3, len(wrong_pool)))
+                options = [correct_title] + [s["name"] for s in wrong_options]
+                random.shuffle(options)
+                correct_idx = options.index(correct_title)
+                labels = ["A", "B", "C", "D"]
+                question = f"👤 **Artist:** {correct_artist.split(',')[0].strip()}\n\n❓ **Kaunsa song hai is artist ka?**"
+                answer = correct_title.lower()
+                answer_display = f"{labels[correct_idx]}. {correct_title}"
+
+    active_quiz[chat_id] = {
+        "answer": answer, "title": correct_title,
+        "artist": correct_artist, "type": "quiz",
+        "options": options, "quiz_subtype": quiz_type
+    }
+    
+    text = f"🎮 **Music Quiz!**\n\n{question}\n\n"
+    for i, opt in enumerate(options[:4]):
         text += f"**{labels[i]}.** {opt}\n"
     text += "\n💭 Reply A, B, C or D!\n⏱ 20 seconds!"
     await msg.edit(text)
     await asyncio.sleep(20)
     if chat_id in active_quiz and active_quiz[chat_id].get("type") == "quiz":
         del active_quiz[chat_id]
-        await m.reply(f"⏱ **Time's up!**\nAnswer: **{labels[correct_idx]}. {correct_title}** by {correct_artist}")
+        await m.reply(f"⏱ **Time's up!**\nAnswer: **{answer_display}**")
 
 @app.on_message(filters.command("mystats"))
 async def mystats(_, m: Message):
@@ -2555,17 +2851,22 @@ async def quiz_check(_, m: Message):
     if quiz_type in ("quiz", "artistquiz"):
         option_map = {"a": 0, "b": 1, "c": 2, "d": 3}
         if user_ans in option_map:
-            selected = quiz["options"][option_map[user_ans]]
+            idx = option_map[user_ans]
+            if idx >= len(quiz.get("options", [])):
+                return
+            selected = quiz["options"][idx]
             if selected.lower() == correct:
                 del active_quiz[chat_id]
                 db.ensure_user(m.from_user.id, m.from_user.first_name)
                 db.add_xp(m.from_user.id, XP_REWARDS["quiz_win"])
-                await m.reply(f"✅ **Correct! {m.from_user.first_name}!** 🎉\n"
-                              f"🎵 **{quiz['title']}** by {quiz['artist']}\n"
-                              f"✨ **+{XP_REWARDS['quiz_win']} XP earned!**\n\n"
-                              f"📥 `/download {quiz['title']}`")
+                await m.reply(
+                    f"✅ **Sahi Jawab! {m.from_user.first_name}!** 🎉\n"
+                    f"🎵 **{quiz['title']}** — {quiz['artist']}\n"
+                    f"✨ **+{XP_REWARDS['quiz_win']} XP!**\n\n"
+                    f"📥 `/download {quiz['title']}`"
+                )
             else:
-                await m.reply(f"❌ **Wrong!** Try again!\n💡 Starts with **{quiz['title'][0]}**")
+                await m.reply(f"❌ **Galat!** Dobara try karo! 💡")
 
     elif quiz_type == "fillblank":
         if user_ans == correct or correct in user_ans:
@@ -2579,18 +2880,20 @@ async def quiz_check(_, m: Message):
             await m.reply(f"❌ **Wrong!** Starts with **{correct[0]}**")
 
     elif quiz_type == "yeargame":
-        if user_ans == correct:
+        if user_ans == correct or user_ans in correct:
             del active_quiz[chat_id]
             db.ensure_user(m.from_user.id, m.from_user.first_name)
             db.add_xp(m.from_user.id, XP_REWARDS["quiz_win"])
-            await m.reply(f"✅ **Correct! {m.from_user.first_name}!** 🎉\nYear: **{correct}**\n✨ **+{XP_REWARDS['quiz_win']} XP!**")
+            await m.reply(f"✅ **Sahi! {m.from_user.first_name}!** 🎉\nYear: **{correct}**\n✨ **+{XP_REWARDS['quiz_win']} XP!**")
         else:
             try:
                 diff = abs(int(user_ans) - int(correct))
-                hint = "🔥 Very close!" if diff <= 2 else "📅 Try again!"
-                await m.reply(f"❌ **Wrong!** {hint}")
+                if diff <= 1: hint = "🔥 Bahut close!"
+                elif diff <= 3: hint = "📅 Kaafi close!"
+                else: hint = "📅 Dobara try karo!"
+                await m.reply(f"❌ **Galat!** {hint}")
             except:
-                await m.reply("❌ Year number likho!")
+                await m.reply("❌ Sirf year number reply karo!")
 
     else:  # guess
         if any(w in user_ans for w in correct.split() if len(w) > 3):
