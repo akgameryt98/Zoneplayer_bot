@@ -10,29 +10,19 @@ import database as db
 import apis
 
 # ========== USERBOT + PYTGCALLS SETUP ==========
-from pyrogram import Client as UserClient
+
 import yt_dlp
-print("[BOOT] yt_dlp imported OK")
 
 USER_STRING = os.environ.get("USER_STRING_SESSION", "")
 USER_API_ID = int(os.environ.get("USER_API_ID", 0))
 USER_API_HASH = os.environ.get("USER_API_HASH", "")
 
 # Userbot client
-userbot = UserClient(
-    "userbot",
-    api_id=USER_API_ID,
-    api_hash=USER_API_HASH,
-    session_string=USER_STRING
-) if USER_STRING else None
 
 # PyTgCalls instance
 pytgcalls = None  # Will be initialized in main()
 
-# VC State
-vc_queue = {}      # {chat_id: [{"title": "", "url": "", "requested_by": ""}]}
-vc_playing = {}    # {chat_id: {"title": "", "requested_by": ""}}
-vc_paused = {}     # {chat_id: True/False}
+
 
 app = Client("beatnova_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
@@ -42,8 +32,9 @@ DEVELOPER = "@ZeroShader"
 START_TIME = datetime.datetime.now()
 
 active_quiz = {}
-today_downloads = {"count": 0, "date": datetime.date.today()}
 group_votes = {}
+today_downloads = {"count": 0, "date": datetime.date.today()}
+
 
 PLACEHOLDERS = ["[song]", "[song name]", "[name]", "[artist]", "[line]", "[mood]", "[type]", "[a-z]"]
 
@@ -68,62 +59,7 @@ EASTER_EGGS = [
     "🥚 Easter Egg #2: BeatNova processes thousands of songs... and hasn't complained once! 😄",
 ]
 
-# ========== VC HELPER FUNCTIONS ==========
 
-def get_audio_url(query):
-    """Get audio stream URL using yt-dlp or JioSaavn"""
-    # Try JioSaavn first (better quality for Indian songs)
-    try:
-        song = apis.search_song_download(query, "320")
-        if song and song.get("download_url"):
-            return song["download_url"], song.get("name", query), song.get("duration", 0)
-    except:
-        pass
-    # Fallback: yt-dlp YouTube
-    try:
-        ydl_opts = {
-            "format": "bestaudio/best",
-            "noplaylist": True,
-            "quiet": True,
-            "no_warnings": True,
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"ytsearch1:{query}", download=False)
-            if info and info.get("entries"):
-                entry = info["entries"][0]
-                url = entry.get("url")
-                title = entry.get("title", query)
-                duration = entry.get("duration", 0)
-                return url, title, duration
-    except Exception as e:
-        print(f"[yt-dlp] Error: {e}")
-    return None, query, 0
-
-async def play_next(chat_id):
-    """Play next song in queue"""
-    if chat_id not in vc_queue or not vc_queue[chat_id]:
-        vc_playing.pop(chat_id, None)
-        return
-    next_song = vc_queue[chat_id].pop(0)
-    await start_playing(chat_id, next_song)
-
-async def start_playing(chat_id, song_info):
-    """Start playing a song in VC"""
-    global pytgcalls
-    if not pytgcalls:
-        return
-    url = song_info["url"]
-    vc_playing[chat_id] = song_info
-    vc_paused[chat_id] = False
-    try:
-        from pytgcalls.types import MediaStream
-        try:
-            await pytgcalls.change_stream(chat_id, MediaStream(url))
-        except:
-            await pytgcalls.join_group_call(chat_id, MediaStream(url))
-        print(f"[VC] Playing: {song_info['title']}")
-    except Exception as e:
-        print(f"[VC] start_playing error: {e}")
 
 XP_REWARDS = {
     "download": 10,
@@ -1752,186 +1688,20 @@ async def ping(_, m: Message):
 
 @app.on_message(filters.command("play"))
 async def play_vc(_, m: Message):
-    if not pytgcalls:
-        await m.reply("❌ VC system not configured!")
-        return
-    if m.chat.type.name not in ("GROUP", "SUPERGROUP"):
-        await m.reply("❌ Group mein use karo!")
-        return
-    parts = m.text.split(None, 1)
-    if len(parts) < 2 or not parts[1].strip():
-        await m.reply("❌ Example: `/play Tum Hi Ho`")
-        return
-    query = parts[1].strip()
-    chat_id = m.chat.id
-    msg = await m.reply(f"🔍 **Searching:** `{query}`...")
-    url, title, duration = await asyncio.to_thread(get_audio_url, query)
-    if not url:
-        await msg.edit("❌ Song not found!")
-        return
-    mins, secs = duration // 60, duration % 60
-    song_info = {
-        "title": title,
-        "url": url,
-        "duration": duration,
-        "requested_by": m.from_user.first_name
-    }
-    # If already playing, add to queue
-    if chat_id in vc_playing and vc_playing[chat_id]:
-        if chat_id not in vc_queue:
-            vc_queue[chat_id] = []
-        vc_queue[chat_id].append(song_info)
-        await msg.edit(
-            f"📋 **Added to Queue!**\n\n"
-            f"🎵 **{title}**\n"
-            f"⏱ {mins}:{secs:02d}\n"
-            f"📋 Position: #{len(vc_queue[chat_id])}\n"
-            f"👤 {m.from_user.first_name}"
-        )
-        return
-    await msg.edit(f"🎵 **Joining VC...**")
-    if not pytgcalls:
-        await msg.edit("❌ VC not ready! Wait karo ya bot restart karo.")
-        return
-    try:
-        # Try all possible method names for different pytgcalls versions
-        from pytgcalls.types import MediaStream
-        stream = MediaStream(url)
-        # Try different method names
-        joined = False
-        for method in ["join_group_call", "join", "call", "start_call", "play", "start_stream"]:
-            if hasattr(pytgcalls, method):
-                print(f"[VC] Trying: {method}")
-                await getattr(pytgcalls, method)(chat_id, stream)
-                joined = True
-                print(f"[VC] Success with: {method}")
-                break
-        if not joined:
-            raise Exception(f"No valid method found! Methods: {[m for m in dir(pytgcalls) if not m.startswith('_')]}")
-        vc_playing[chat_id] = song_info
-        vc_paused[chat_id] = False
-        await msg.edit(
-            f"▶️ **Now Playing:**\n\n"
-            f"🎵 **{title}**\n"
-            f"⏱ {mins}:{secs:02d}\n"
-            f"👤 {m.from_user.first_name}\n\n"
-            f"⏸ `/pause` | ⏹ `/stop` | ⏭ `/skip`\n"
-            f"📋 `/queue` | 🔊 `/volume 80`"
-        )
-    except Exception as e:
-        await msg.edit(f"❌ VC Error: `{str(e)[:100]}`\n\n💡 Bot ko VC admin banao!")
-
-@app.on_message(filters.command("pause"))
-async def pause_vc(_, m: Message):
-    if not pytgcalls:
-        return
-    chat_id = m.chat.id
-    if chat_id not in vc_playing:
-        await m.reply("❌ Kuch nahi chal raha!")
-        return
-    try:
-        await pytgcalls.pause_stream(chat_id)
-        vc_paused[chat_id] = True
-        await m.reply("⏸ **Paused!**\n▶️ `/resume` se resume karo")
-    except Exception as e:
-        await m.reply(f"❌ Error: `{str(e)[:50]}`")
-
-@app.on_message(filters.command("resume"))
-async def resume_vc(_, m: Message):
-    if not pytgcalls:
-        return
-    chat_id = m.chat.id
-    if not vc_paused.get(chat_id):
-        await m.reply("❌ Paused nahi hai!")
-        return
-    try:
-        await pytgcalls.resume_stream(chat_id)
-        vc_paused[chat_id] = False
-        song = vc_playing.get(chat_id, {})
-        await m.reply(f"▶️ **Resumed!**\n🎵 {song.get('title', 'Unknown')}")
-    except Exception as e:
-        await m.reply(f"❌ Error: `{str(e)[:50]}`")
-
-@app.on_message(filters.command("stop"))
-async def stop_vc(_, m: Message):
-    if not pytgcalls:
-        return
-    chat_id = m.chat.id
-    try:
-        await pytgcalls.leave_group_call(chat_id)
-        vc_playing.pop(chat_id, None)
-        vc_queue.pop(chat_id, None)
-        vc_paused.pop(chat_id, None)
-        await m.reply("⏹ **Stopped!** VC se nikal gaya.")
-    except Exception as e:
-        await m.reply(f"❌ Error: `{str(e)[:50]}`")
+    await m.reply("🔜 **Coming Soon!**\n\nVoice Chat feature jald aayega!\n\nAbhi ke liye: 📥 `/download [song]`")
 
 @app.on_message(filters.command("skip"))
-async def skip_vc(_, m: Message):
-    if not pytgcalls:
-        return
+async def skip_cmd(_, m: Message):
     chat_id = m.chat.id
-    # Skip quiz if active
-    if chat_id in active_quiz:
-        quiz = active_quiz.pop(chat_id)
-        await m.reply(f"⏭ **Skipped!**\nAnswer: **{quiz['title']}** by {quiz['artist']}")
+    if chat_id not in active_quiz:
+        await m.reply("❌ No active quiz!")
         return
-    # Skip VC song
-    if chat_id not in vc_playing:
-        await m.reply("❌ Kuch nahi chal raha!")
-        return
-    current = vc_playing.get(chat_id, {})
-    if vc_queue.get(chat_id):
-        next_song = vc_queue[chat_id].pop(0)
-        await start_playing(chat_id, next_song)
-        await m.reply(
-            f"⏭ **Skipped:** {current.get('title', 'Unknown')}\n\n"
-            f"▶️ **Now Playing:** {next_song['title']}"
-        )
-    else:
-        try:
-            await pytgcalls.leave_group_call(chat_id)
-        except: pass
-        vc_playing.pop(chat_id, None)
-        vc_paused.pop(chat_id, None)
-        await m.reply(f"⏭ **Skipped!** Queue empty hai.\n🎵 `/play [song]` se naya shuru karo")
+    quiz = active_quiz.pop(chat_id)
+    await m.reply(f"⏭ **Skipped!**\nAnswer: **{quiz['title']}** by {quiz['artist']}")
 
-@app.on_message(filters.command("queue"))
-async def show_queue(_, m: Message):
-    chat_id = m.chat.id
-    playing = vc_playing.get(chat_id)
-    queue = vc_queue.get(chat_id, [])
-    if not playing and not queue:
-        await m.reply("📋 Queue empty hai!\n🎵 `/play [song]` se shuru karo")
-        return
-    text = ""
-    if playing:
-        d = playing.get("duration", 0)
-        text += f"▶️ **Now Playing:**\n🎵 {playing['title']}\n⏱ {d//60}:{d%60:02d} | 👤 {playing['requested_by']}\n\n"
-    if queue:
-        text += f"📋 **Queue ({len(queue)} songs):**\n"
-        for i, s in enumerate(queue, 1):
-            text += f"{i}. {s['title']} — {s['requested_by']}\n"
-    text += "\n⏭ `/skip` | ⏸ `/pause` | ⏹ `/stop`"
-    await m.reply(text)
 
-@app.on_message(filters.command("volume"))
-async def volume_vc(_, m: Message):
-    if not pytgcalls:
-        return
-    parts = m.text.split(None, 1)
-    if len(parts) < 2 or not parts[1].strip().isdigit():
-        await m.reply("❌ Example: `/volume 80`\nRange: 1-200")
-        return
-    vol = int(parts[1].strip())
-    if not 1 <= vol <= 200:
-        await m.reply("❌ Range: 1-200")
-        return
-    try:
-        await pytgcalls.change_volume_call(m.chat.id, vol)
-        await m.reply(f"🔊 **Volume: {vol}%**")
-    except Exception as e:
-        await m.reply(f"❌ Error: `{str(e)[:50]}`")
+
+
 
 @app.on_message(filters.command("playlist"))
 async def playlist(_, m: Message):
@@ -2866,12 +2636,6 @@ async def main():
     db.init_db()
     print(f"✅ {BOT_NAME} started!")
     
-    # Debug env vars
-    print(f"[DEBUG] USER_STRING set: {bool(USER_STRING)}")
-    print(f"[DEBUG] USER_API_ID: {USER_API_ID}")
-    print(f"[DEBUG] userbot: {userbot is not None}")
-    print(f"[DEBUG] pytgcalls: {pytgcalls is not None}")
-    print(f"[DEBUG] pytgcalls obj: {pytgcalls is not None}")
 
     # Start userbot + pytgcalls if configured
     if userbot:
@@ -2890,7 +2654,7 @@ async def main():
                         )
                     except: pass
                 else:
-                    vc_playing.pop(chat_id, None)
+                    
                     try:
                         await pytgcalls.leave_group_call(chat_id)
                     except: pass
