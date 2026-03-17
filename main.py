@@ -9,18 +9,10 @@ from config import API_ID, API_HASH, BOT_TOKEN
 import database as db
 import apis
 
-# ========== USERBOT + PYTGCALLS SETUP ==========
 
-import yt_dlp
 
-USER_STRING = os.environ.get("USER_STRING_SESSION", "")
-USER_API_ID = int(os.environ.get("USER_API_ID", 0))
-USER_API_HASH = os.environ.get("USER_API_HASH", "")
 
-# Userbot client
 
-# PyTgCalls instance
-pytgcalls = None  # Will be initialized in main()
 
 
 
@@ -2631,55 +2623,9 @@ async def send_daily_songs():
         await asyncio.sleep(60)
 
 async def main():
-    global pytgcalls  # MUST be first line
     await app.start()
     db.init_db()
     print(f"✅ {BOT_NAME} started!")
-    
-
-    # Start userbot + pytgcalls if configured
-    if userbot:
-        try:
-            # Register stream end handler BEFORE starting
-            @pytgcalls.on_stream_end()
-            async def on_stream_end(client, update):
-                chat_id = update.chat_id
-                if vc_queue.get(chat_id):
-                    next_song = vc_queue[chat_id].pop(0)
-                    await start_playing(chat_id, next_song)
-                    try:
-                        await app.send_message(
-                            chat_id,
-                            f"▶️ **Now Playing:**\n🎵 {next_song['title']}\n👤 {next_song['requested_by']}"
-                        )
-                    except: pass
-                else:
-                    
-                    try:
-                        await pytgcalls.leave_group_call(chat_id)
-                    except: pass
-
-            # Start userbot first
-            print("[VC] Starting userbot...")
-            await userbot.start()
-            print("✅ Userbot started!")
-
-            # Initialize pytgcalls NOW after userbot is connected
-            from pytgcalls import PyTgCalls as _PTC
-            pytgcalls = _PTC(userbot)
-            print("✅ PyTgCalls created!")
-
-            # Start pytgcalls
-            await pytgcalls.start()
-            print("✅ PyTgCalls started!")
-
-        except Exception as e:
-            import traceback
-            print(f"⚠️ VC Error: {e}")
-            print(traceback.format_exc())
-    else:
-        print("⚠️ USER_STRING_SESSION not set — VC disabled")
-
     asyncio.create_task(send_daily_songs())
     await asyncio.Event().wait()
 
