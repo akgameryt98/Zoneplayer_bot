@@ -977,7 +977,7 @@ async def birthday(_, m: Message):
 
 # C
 
-@app.on_message(filters.command("chat"))
+@app.on_message(filters.command(["chat", "c"]))
 async def chat_cmd(_, m: Message):
     if not GROQ_API_KEY:
         await m.reply("❌ Chat feature setup nahi hai!")
