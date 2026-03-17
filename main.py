@@ -3413,9 +3413,10 @@ async def wordle_cmd(_, m: Message):
         db.ensure_user(user_id, m.from_user.first_name)
         xp = max(20, 120 - (attempts_used-1)*20)
         db.add_xp(user_id, xp)
+        prev_attempts = "\n".join(w["attempts"])
         await m.reply(
             f"🎉 **SAHI! {m.from_user.first_name}!**\n\n"
-            + "\n".join(w["attempts"]) +
+            f"{prev_attempts}"
             f"\n\n🟩 Word: **{word}**\n"
             f"Attempts: **{attempts_used}/6**\n"
             f"✨ +{xp} XP!\n\n"
@@ -3423,15 +3424,17 @@ async def wordle_cmd(_, m: Message):
         )
     elif attempts_used >= 6:
         del active_wordle[user_id]
+        prev_attempts2 = "\n".join(w["attempts"])
         await m.reply(
             f"💀 **Game Over!**\n\n"
-            + "\n".join(w["attempts"]) +
+            f"{prev_attempts2}"
             f"\n\n🔤 Word tha: **{word}**\n"
             f"🟩 `/wordle` — Try again!"
         )
     else:
+        prev = "\n".join(w["attempts"])
         await m.reply(
-            f"{'\n'.join(w['attempts'])}\n\n"
+            f"{prev}\n\n"
             f"Attempts: **{attempts_used}/6**\n"
             f"`/wordle GUESS` — Next guess!"
         )
@@ -3444,3 +3447,4 @@ async def main():
     await asyncio.Event().wait()
 
 app.run(main())
+
