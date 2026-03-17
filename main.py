@@ -2861,6 +2861,7 @@ async def send_daily_songs():
         await asyncio.sleep(60)
 
 async def main():
+    global pytgcalls  # MUST be first line
     await app.start()
     db.init_db()
     print(f"✅ {BOT_NAME} started!")
@@ -2900,7 +2901,6 @@ async def main():
             print("✅ Userbot started!")
 
             # Initialize pytgcalls NOW after userbot is connected
-            global pytgcalls
             from pytgcalls import PyTgCalls as _PTC
             pytgcalls = _PTC(userbot)
             print("✅ PyTgCalls created!")
