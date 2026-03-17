@@ -77,6 +77,46 @@ def _saavn_old(query, limit=10):
         print(f"[saavn_old] Error: {e}")
         return []
 
+def _find_best_match(results, query):
+    """Find best matching song from results based on query"""
+    if not results:
+        return None
+    query_lower = query.lower().strip()
+    query_words = query_lower.split()
+    
+    best = None
+    best_score = -1
+    
+    for song in results:
+        name = song.get("name", "").lower()
+        score = 0
+        
+        # Exact match = highest score
+        if name == query_lower:
+            return song
+        
+        # Check if query words match song name words
+        name_words = name.split()
+        matched_words = sum(1 for w in query_words if w in name_words)
+        score += matched_words * 10
+        
+        # Penalize if song has extra words not in query (like "2.0", "remix", "reprise")
+        extra_words = [w for w in name_words if w not in query_words]
+        penalty_words = ["2.0", "remix", "reprise", "version", "cover", "remastered", "ft", "feat", "extended"]
+        for w in extra_words:
+            if any(p in w for p in penalty_words):
+                score -= 15
+        
+        # Bonus if song name starts with query
+        if name.startswith(query_lower[:10]):
+            score += 5
+            
+        if score > best_score:
+            best_score = score
+            best = song
+    
+    return best or results[0]
+
 def _get_best_download_url(dl_urls, quality="320", key="url"):
     """Pick best quality URL from downloadUrl list"""
     if not dl_urls:
@@ -111,7 +151,7 @@ def _saavn_quality(query, quality="320", limit=10):
         if r.status_code == 200:
             results = r.json().get("data", {}).get("results", [])
             if results:
-                s = results[0]
+                s = _find_best_match(results, query)
                 dl_urls = s.get("downloadUrl", [])
                 dl_url = _get_best_download_url(dl_urls, quality, "url")
                 if dl_url:
@@ -143,7 +183,7 @@ def _saavn_quality(query, quality="320", limit=10):
         if r2.status_code == 200:
             results_old = r2.json()["data"]["results"]
             if results_old:
-                s = results_old[0]
+                s = _find_best_match(results_old, query)
                 dl_urls = s.get("downloadUrl", [])
                 dl_url = _get_best_download_url(dl_urls, quality, "link")
                 if dl_url:
@@ -413,35 +453,31 @@ def detect_language(query):
 
 def search_songs(query, limit=10):
     """
-    Smart multi-API search:
-    - Hindi/Indian → JioSaavn primary, Deezer fallback
-    - English/International → Deezer + iTunes primary, JioSaavn fallback
-    - Always returns best results from available source
+    Smart multi-API search with best match sorting
     """
     lang = detect_language(query)
     results = []
 
     if lang == "hindi":
-        # Try saavn.dev first
         results = _saavn_dev(query, limit)
         if not results:
             results = _saavn_old(query, limit)
         if not results:
-            # Fallback to Deezer
-            deezer = _deezer_search(query, limit)
-            results = deezer
+            results = _deezer_search(query, limit)
     else:
-        # International: Deezer + iTunes
         results = _deezer_search(query, limit)
         if len(results) < 3:
-            itunes = _itunes_search(query, limit)
-            results = results + itunes
-        # Also try JioSaavn for any Indian content
+            results = results + _itunes_search(query, limit)
         if len(results) < 5:
-            saavn = _saavn_dev(query, 5)
-            if not saavn:
-                saavn = _saavn_old(query, 5)
+            saavn = _saavn_dev(query, 5) or _saavn_old(query, 5)
             results = results + saavn
+
+    # Sort by best match — put best match first
+    if results:
+        best = _find_best_match(results, query)
+        if best and best in results:
+            results.remove(best)
+            results.insert(0, best)
 
     return results[:limit]
 
