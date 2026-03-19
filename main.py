@@ -25,7 +25,7 @@ START_TIME = datetime.datetime.now()
 
 active_quiz = {}
 group_votes = {}
-active_bomb = {}   # {chat_id: {"holder": user_id, "name": str, "timer": int}}
+active_bomb = {}   # {chat_id: {"holder": user_id, "name": str, "timer": int, "players": {id: name}}}
 active_duel = {}   # {chat_id: {"p1": id, "p2": id, "hp1": int, "hp2": int, "turn": id}}
 active_guess = {}  # {chat_id: {"number": int, "attempts": int}}
 active_wordle = {} # {user_id: {"word": str, "attempts": list}}
@@ -3105,135 +3105,234 @@ async def slots_cmd(_, m: Message):
 
 @app.on_message(filters.command("dice"))
 async def dice_cmd(_, m: Message):
-    parts = m.text.split(None, 1)
-    sides = 6
-    if len(parts) > 1:
-        try: sides = min(int(parts[1].strip()), 100)
-        except: pass
-    result = random.randint(1, sides)
-    emoji = "🎲" if sides == 6 else "🎯"
-    msg_text = f"{emoji} **Dice Roll! (1-{sides})**\n\n🎲 Result: **{result}**\n\n"
-    if sides == 6:
-        if result == 6: msg_text += "🔥 **Perfect roll!**"
-        elif result == 1: msg_text += "😅 **Lowest possible!**"
-        else: msg_text += f"Not bad!"
+    """Simple dice roll 1-6"""
+    result = random.randint(1, 6)
+    faces = ["", "1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣"]
+    msg_text = f"🎲 **Dice Roll!**\n\n{faces[result]} You rolled: **{result}**\n\n"
+    if result == 6: msg_text += "🔥 **Max roll!** Lucky!"
+    elif result == 1: msg_text += "😬 **Snake eyes!** Unlucky!"
+    else: msg_text += "Roll again with `/dice`!"
     await m.reply(msg_text)
 
 @app.on_message(filters.command("guess"))
 async def guess_cmd(_, m: Message):
     chat_id = m.chat.id
     parts = m.text.split(None, 1)
-    # New game
-    if len(parts) < 2 or not parts[1].strip().isdigit():
-        if chat_id in active_guess:
-            g = active_guess[chat_id]
-            await m.reply(
-                f"🔢 **Game already active!**\n"
-                f"Attempts: {g['attempts']}\n"
-                f"Range: 1-100\n"
-                f"Reply with a number to guess!"
-            )
-        else:
+    # Check if number provided with command
+    if len(parts) >= 2 and parts[1].strip().isdigit():
+        # Guess attempt via command
+        if chat_id not in active_guess:
+            # Auto-start if no game active
             number = random.randint(1, 100)
             active_guess[chat_id] = {"number": number, "attempts": 0, "starter": m.from_user.first_name}
             await m.reply(
-                f"🔢 **Number Guess!**\n\n"
-                f"Maine 1 se 100 ke beech ek number socha hai!\n\n"
-                f"💭 **Koi bhi number reply karo guess karne ke liye!**\n"
-                f"🏆 Jitne kam attempts utna better!"
+                f"🔢 **Number Guess Game!**\n\n"
+                f"I picked a number between 1-100!\n"
+                f"Just reply with numbers to guess!\n"
+                f"🏆 Fewer attempts = more XP!"
             )
+            return
+        await _process_guess(m, chat_id, int(parts[1].strip()))
         return
-    # Guess attempt
-    if chat_id not in active_guess:
-        await m.reply("❌ Pehle `/guess` se game shuru karo!")
-        return
+    # Start new game or show status
+    if chat_id in active_guess:
+        g = active_guess[chat_id]
+        await m.reply(
+            f"🔢 **Game Active!**\n\n"
+            f"Number between 1-100\n"
+            f"Attempts so far: **{g['attempts']}**\n\n"
+            f"Just type a number to guess!\n"
+            f"❌ `/endguess` — End game"
+        )
+    else:
+        number = random.randint(1, 100)
+        active_guess[chat_id] = {"number": number, "attempts": 0, "starter": m.from_user.first_name}
+        await m.reply(
+            f"🔢 **Number Guess Game!**\n\n"
+            f"I picked a number between **1-100**!\n\n"
+            f"💭 **Just type a number to guess!**\n"
+            f"🏆 Fewer attempts = more XP!\n"
+            f"❌ `/endguess` — End game"
+        )
+
+async def _process_guess(m, chat_id, guess):
     g = active_guess[chat_id]
-    guess = int(parts[1].strip())
     g["attempts"] += 1
+    active_guess[chat_id] = g
     if guess == g["number"]:
         del active_guess[chat_id]
         db.ensure_user(m.from_user.id, m.from_user.first_name)
         attempts = g["attempts"]
-        xp = max(10, 100 - (attempts-1)*10)
+        xp = max(10, 100 - (attempts-1)*8)
         db.add_xp(m.from_user.id, xp)
         await m.reply(
-            f"🎉 **Sahi! {m.from_user.first_name}!**\n\n"
-            f"Number tha: **{g['number']}**\n"
+            f"🎉 **CORRECT! {m.from_user.first_name}!**\n\n"
+            f"Number was: **{g['number']}**\n"
             f"Attempts: **{attempts}**\n"
             f"✨ +{xp} XP!\n\n"
-            f"🔢 `/guess` — Naya game!"
+            f"🔢 `/guess` — New game!"
         )
     elif guess < g["number"]:
-        await m.reply(f"📈 **{guess}** — Isse **zyada** hai! (Attempt {g['attempts']})")
+        await m.reply(f"📈 **{guess}** — Go **higher**! (Attempt #{g['attempts']})")
     else:
-        await m.reply(f"📉 **{guess}** — Isse **kam** hai! (Attempt {g['attempts']})")
+        await m.reply(f"📉 **{guess}** — Go **lower**! (Attempt #{g['attempts']})")
 
-# Text handler for guess game
-@app.on_message(filters.text & ~filters.command("") & filters.private)
-async def guess_text_handler(_, m: Message):
-    pass  # Handled by quiz handler below
+@app.on_message(filters.command("endguess"))
+async def endguess_cmd(_, m: Message):
+    chat_id = m.chat.id
+    if chat_id not in active_guess:
+        await m.reply("❌ No active guess game!")
+        return
+    g = active_guess.pop(chat_id)
+    await m.reply(f"❌ **Game ended!**\nNumber was: **{g['number']}**")
 
 @app.on_message(filters.command("bomb"))
 async def bomb_cmd(_, m: Message):
     if m.chat.type.name not in ("GROUP", "SUPERGROUP"):
-        await m.reply("❌ Group mein use karo!")
+        await m.reply("❌ Group only!")
         return
     chat_id = m.chat.id
     if chat_id in active_bomb:
-        await m.reply("💣 Bomb already active hai! `/passbomb @user` karo!")
+        b = active_bomb[chat_id]
+        if b.get("started"):
+            await m.reply("💣 Bomb game already running!")
+        else:
+            players = b.get("players", {})
+            names = ", ".join(players.values()) if players else "None"
+            await m.reply(
+                f"💣 **Bomb Game — Joining Phase!**\n\n"
+                f"Players joined: **{len(players)}**\n"
+                f"👥 {names}\n\n"
+                f"⚡ `/joinb` — Join the game!\n"
+                f"🚀 `/startbomb` — Start (2+ players needed)"
+            )
         return
-    timer = random.randint(30, 90)
+    # Create new lobby
     active_bomb[chat_id] = {
-        "holder": m.from_user.id,
-        "name": m.from_user.first_name,
-        "timer": timer,
-        "start": asyncio.get_event_loop().time()
+        "holder": None, "name": None,
+        "players": {m.from_user.id: m.from_user.first_name},
+        "started": False
     }
     await m.reply(
-        f"💣 **BOMB GAME!**\n\n"
-        f"💣 Bomb is with: **{m.from_user.first_name}**\n"
-        f"⏱ Timer: **{timer} seconds** (hidden!)\n\n"
-        f"⚡ **Kisi ko pass karo: `/passbomb @username`**\n"
-        f"💥 Jiske haath mein phoota — wo haara!"
+        f"💣 **BOMB GAME LOBBY!**\n\n"
+        f"**{m.from_user.first_name}** created the game!\n\n"
+        f"⚡ `/joinb` — Join karo (need 2+ players)\n"
+        f"🚀 `/startbomb` — Start game\n"
+        f"❌ `/cancelbomb` — Cancel"
+    )
+
+@app.on_message(filters.command("joinb"))
+async def joinbomb_cmd(_, m: Message):
+    chat_id = m.chat.id
+    if chat_id not in active_bomb:
+        await m.reply("❌ No active bomb lobby! `/bomb` se create karo!")
+        return
+    b = active_bomb[chat_id]
+    if b.get("started"):
+        await m.reply("❌ Game already started!")
+        return
+    uid = m.from_user.id
+    if uid in b["players"]:
+        await m.reply(f"✅ {m.from_user.first_name}, you already joined!")
+        return
+    b["players"][uid] = m.from_user.first_name
+    active_bomb[chat_id] = b
+    names = ", ".join(b["players"].values())
+    await m.reply(
+        f"✅ **{m.from_user.first_name} joined!**\n\n"
+        f"👥 Players ({len(b['players'])}): {names}\n"
+        f"🚀 `/startbomb` — Start when ready!"
+    )
+
+@app.on_message(filters.command("startbomb"))
+async def startbomb_cmd(_, m: Message):
+    chat_id = m.chat.id
+    if chat_id not in active_bomb:
+        await m.reply("❌ No lobby! `/bomb` se create karo!")
+        return
+    b = active_bomb[chat_id]
+    if b.get("started"):
+        await m.reply("❌ Already started!")
+        return
+    if len(b["players"]) < 2:
+        await m.reply("❌ Need at least 2 players! `/joinb` karo!")
+        return
+    # Pick random starting holder from players
+    holder_id = random.choice(list(b["players"].keys()))
+    holder_name = b["players"][holder_id]
+    timer = random.randint(45, 120)
+    b["holder"] = holder_id
+    b["name"] = holder_name
+    b["timer"] = timer
+    b["started"] = True
+    active_bomb[chat_id] = b
+    names = ", ".join(b["players"].values())
+    await m.reply(
+        f"💣 **BOMB GAME STARTED!**\n\n"
+        f"👥 Players: {names}\n\n"
+        f"💣 Bomb starts with: **{holder_name}**\n"
+        f"⏱ Timer: Hidden!\n\n"
+        f"⚡ **Pass it! Reply to any player's message: `/passbomb`**\n"
+        f"💥 Whoever holds it when it explodes — LOSES!"
     )
     asyncio.create_task(_bomb_timer(chat_id, m, timer))
 
 async def _bomb_timer(chat_id, m, timer):
     await asyncio.sleep(timer)
-    if chat_id in active_bomb:
+    if chat_id in active_bomb and active_bomb[chat_id].get("started"):
         bomb = active_bomb.pop(chat_id)
         try:
             await m.reply(
                 f"💥 **BOOM!**\n\n"
-                f"Bomb **{bomb['name']}** ke haath mein phoota!\n\n"
-                f"😂 **{bomb['name']} haara!**"
+                f"**{bomb['name']}** was holding the bomb!\n\n"
+                f"😂 **{bomb['name']} LOSES!** 💀"
             )
         except: pass
+
+@app.on_message(filters.command("cancelbomb"))
+async def cancelbomb_cmd(_, m: Message):
+    chat_id = m.chat.id
+    if chat_id not in active_bomb:
+        await m.reply("❌ No active game!")
+        return
+    active_bomb.pop(chat_id)
+    await m.reply("❌ **Bomb game cancelled!**")
 
 @app.on_message(filters.command("passbomb"))
 async def passbomb_cmd(_, m: Message):
     chat_id = m.chat.id
     if chat_id not in active_bomb:
-        await m.reply("❌ Koi active bomb nahi hai! `/bomb` se shuru karo!")
+        await m.reply("❌ No active bomb! `/bomb` to start!")
         return
     bomb = active_bomb[chat_id]
+    if not bomb.get("started"):
+        await m.reply("❌ Game not started yet! `/startbomb` karo!")
+        return
     if bomb["holder"] != m.from_user.id:
-        await m.reply(f"❌ Bomb tumhare paas nahi hai! **{bomb['name']}** ke paas hai!")
+        await m.reply(f"❌ Bomb is not with you! It's with **{bomb['name']}**!")
         return
     if not m.reply_to_message:
-        await m.reply("❌ Kisi ke message pe reply karke `/passbomb` karo!")
+        await m.reply("❌ Reply to a player's message to pass!")
         return
     target = m.reply_to_message.from_user
     if target.id == m.from_user.id:
-        await m.reply("❌ Apne aap ko pass nahi kar sakte!")
+        await m.reply("❌ Can't pass to yourself!")
+        return
+    # Check if target is in players list
+    if target.id not in bomb["players"]:
+        player_names = ", ".join(bomb["players"].values())
+        await m.reply(
+            f"❌ **{target.first_name}** is not in this game!\n"
+            f"👥 Players: {player_names}"
+        )
         return
     bomb["holder"] = target.id
     bomb["name"] = target.first_name
     active_bomb[chat_id] = bomb
     await m.reply(
-        f"💣 **Bomb passed!**\n\n"
-        f"💣 **{m.from_user.first_name}** ne **{target.first_name}** ko pass kiya!\n"
-        f"⚡ Jaldi pass karo ya BOOM! 💥"
+        f"💣 **Passed!**\n\n"
+        f"**{m.from_user.first_name}** → **{target.first_name}**\n"
+        f"⚡ Pass it fast or BOOM! 💥"
     )
 
 @app.on_message(filters.command("duel"))
@@ -3282,7 +3381,7 @@ async def attack_cmd(_, m: Message):
     duel = active_duel[chat_id]
     if m.from_user.id != duel["turn"]:
         other = duel["p1name"] if duel["turn"] == duel["p1"] else duel["p2name"]
-        await m.reply(f"❌ Tumhara turn nahi! **{other}** ka turn hai!")
+        await m.reply(f"❌ Not your turn! **{other}** goes next!")
         return
     damage = random.randint(10, 35)
     attacker = m.from_user.first_name
@@ -3447,4 +3546,3 @@ async def main():
     await asyncio.Event().wait()
 
 app.run(main())
-
